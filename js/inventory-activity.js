@@ -1,4 +1,4 @@
-import { SNACK_UNITS } from './supplies.js';
+import { SNACK_UNITS, FROZEN_UNITS } from './supplies.js';
 import { workingDaysBetween, WORKWEEK_DAYS } from './workdays.js';
 /** Aggregate warehouse activity; counts are actual counts, never arrival baselines. */
 export function inventoryActivity(drinks,supplies,events,supplyEvents) {
@@ -7,7 +7,7 @@ export function inventoryActivity(drinks,supplies,events,supplyEvents) {
   const rows=[...events,...supplyEvents].filter(event=>event.accepted!==false&&['count','restock'].includes(event.type)).map(event=>{
     const item=find(event);return item?{id:event.id,itemId:item.id,kind:item.kind,name:item.name,flavor:item.flavor||'',unit:item.unit,quantity:event.quantity,createdAt:event.createdAt,type:event.type}:null;
   }).filter(Boolean).sort((a,b)=>Date.parse(b.createdAt)-Date.parse(a.createdAt));
-  return {recentArrivals:rows.filter(event=>event.type==='restock').slice(0,12),recentCounts:['drink','snack','noodle','toner'].map(kind=>{
+  return {recentArrivals:rows.filter(event=>event.type==='restock').slice(0,12),recentCounts:['drink','snack','frozen','noodle','toner'].map(kind=>{
     const counted=rows.filter(event=>event.type==='count'&&event.kind===kind),stamp=counted[0]?.createdAt;
     return {kind,countedAt:stamp||null,items:counted.filter(event=>event.createdAt===stamp).slice(0,1000)};
   })};
@@ -43,7 +43,7 @@ export function recentArrivalEvents(events,now=Date.now()) {
 
 /** Current recorded balances across the entire catalog, independent of count batches. */
 export function inventoryTotals(items) {
-  return ['drink','snack','noodle','toner'].map(kind=>{
+  return ['drink','snack','frozen','noodle','toner'].map(kind=>{
     const group=items.filter(item=>item.kind===kind);
     return {kind,unknownCount:group.filter(item=>item.active!==false&&item.stock===null).length,
       items:group.filter(item=>item.stock>0).map(item=>({id:item.id,name:item.name,flavor:item.flavor||'',unit:item.unit,stock:item.stock,active:item.active!==false}))};
@@ -51,11 +51,12 @@ export function inventoryTotals(items) {
 }
 
 export function normalizeInventoryTotals(groups) {
-  const kinds=['drink','snack','noodle','toner'],seen=new Set();
-  if(!Array.isArray(groups)||groups.length!==4)throw new Error('分類庫存總量格式不正確。');
+  const kinds=['drink','snack','frozen','noodle','toner'],seen=new Set();
+  if(!Array.isArray(groups)||![4,5].includes(groups.length))throw new Error('分類庫存總量格式不正確。');
+  if(!['drink','snack','noodle','toner'].every(kind=>groups.some(group=>group?.kind===kind)))throw new Error('分類庫存總量缺少必要分類。');
   return groups.map(group=>{
     if(!group||!kinds.includes(group.kind)||seen.has(group.kind)||!Number.isSafeInteger(group.unknownCount)||group.unknownCount<0||group.unknownCount>2000||!Array.isArray(group.items)||group.items.length>2000)throw new Error('分類庫存總量格式不正確。');
-    seen.add(group.kind);const ids=new Set(),units={drink:['包','瓶','罐'],snack:SNACK_UNITS,noodle:['杯','碗'],toner:['盒']};
+    seen.add(group.kind);const ids=new Set(),units={drink:['包','瓶','罐'],snack:SNACK_UNITS,frozen:FROZEN_UNITS,noodle:['杯','碗'],toner:['盒']};
     const items=group.items.map(item=>{
       if(!item||typeof item.id!=='string'||!item.id||item.id.length>160||ids.has(item.id)||typeof item.name!=='string'||!item.name||item.name.length>80||typeof item.flavor!=='string'||item.flavor.length>80||!units[group.kind].includes(item.unit)||!Number.isSafeInteger(item.stock)||item.stock<1||item.stock>999999||typeof item.active!=='boolean')throw new Error('分類庫存品項格式不正確。');
       ids.add(item.id);return {id:item.id,name:item.name,flavor:item.flavor,unit:item.unit,stock:item.stock,active:item.active};

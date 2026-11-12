@@ -2,17 +2,19 @@ import { drinkAvailability } from './drink-availability.js';
 import { matchesInventoryStockFilter } from './restock-preferences.js';
 
 /** Back-office supplies are independent of the public drinks catalog. */
-export const SUPPLY_KINDS = Object.freeze({ snack:'零食', noodle: '泡麵', toner: '碳粉' });
+export const SUPPLY_KINDS = Object.freeze({ snack:'零食', frozen:'冰品', noodle: '泡麵', toner: '碳粉' });
 export const SNACK_CATEGORIES = Object.freeze(['太空包','巧克力','甜/鹹餅乾','健康零食','蛋白質零食','其他鹹食','其他甜食']);
 export const canonicalSnackCategory = category => ['燕麥棒/餅','燕麥棒／餅','燕麥棒'].includes(category) ? '健康零食' : category;
 export const snackPackHint = item => /[（(]量販包[）)]/.test(item?.name||'') ? '量販包以整個大包為 1 包，不換算內袋數量。' : '';
 export const SNACK_UNITS = Object.freeze(['包','盒','條','個','顆']);
+export const FROZEN_UNITS = Object.freeze(['支','杯','盒','包','個','桶']);
+export const supplyUnits = kind => kind==='snack'?SNACK_UNITS:kind==='frozen'?FROZEN_UNITS:kind==='noodle'?['杯','碗']:kind==='toner'?['盒']:[];
 export const supplyNeedsExpiry = kind => kind==='noodle';
 // Existing snack expiry entries stay readable even though new snack entries need no date.
 export const supplySupportsExpiryHistory = kind => kind==='snack'||kind==='noodle';
 
 // Availability is derived from recorded balances; source IDs/history stay intact.
-export const supplyAvailability = item => ['snack','noodle'].includes(item.kind) ? drinkAvailability(item) : item;
+export const supplyAvailability = item => ['snack','frozen','noodle'].includes(item.kind) ? drinkAvailability(item) : item;
 export function matchesSupplyInventoryFilter(item,filter='all',preferences=[]) {
   if(filter==='archived')return item.active===false;
   return item.active!==false&&matchesInventoryStockFilter(item,filter,preferences);
@@ -114,25 +116,26 @@ export function supplyHasUntrackedExpiry(supplyId,events) {
 
 export function normalizeSupplyWarehouse(payload) {
   if (payload.supplyEntry?.version !== 1) return { supplies: [], supplyEvents: [], supplyEntryVersion: 0, supplyExpiryVersion:0, supplyExpirySetVersion:0 };
-  if (!Array.isArray(payload.supplies) || payload.supplies.length>1000 || !Array.isArray(payload.supplyEvents) || payload.supplyEvents.length>100000) throw new Error('零食、泡麵與碳粉庫存資料格式不正確。');
+  if (!Array.isArray(payload.supplies) || payload.supplies.length>1000 || !Array.isArray(payload.supplyEvents) || payload.supplyEvents.length>100000) throw new Error('零食、冰品、泡麵與碳粉庫存資料格式不正確。');
   const ids=new Set(),eventIds=new Set();
   const validCount=value=>Number.isSafeInteger(value)&&value>=0&&value<=999999;
   const validDate=value=>typeof value==='string'&&Number.isFinite(Date.parse(value));
   const supplies=payload.supplies.map(item=>{
-    if(!item||typeof item.id!=='string'||!/^[A-Za-z0-9_-]{1,80}$/.test(item.id)||ids.has(item.id)||typeof item.name!=='string'||!item.name.trim()||item.name.length>80||!Object.hasOwn(SUPPLY_KINDS,item.kind)||!['碗','杯',...SNACK_UNITS].includes(item.unit)||typeof item.active!=='boolean')throw new Error('零食、泡麵與碳粉品項格式不正確。');
+    if(!item||typeof item.id!=='string'||!/^[A-Za-z0-9_-]{1,80}$/.test(item.id)||ids.has(item.id)||typeof item.name!=='string'||!item.name.trim()||item.name.length>80||!Object.hasOwn(SUPPLY_KINDS,item.kind)||!supplyUnits(item.kind).includes(item.unit)||typeof item.active!=='boolean')throw new Error('零食、冰品、泡麵與碳粉品項格式不正確。');
     const known=SUPPLY_CATALOG.find(known=>known.id===item.id);
     if(item.flavor!==undefined&&(typeof item.flavor!=='string'||item.flavor.length>80))throw new Error('口味最多 80 字。');
+    if(item.kind==='frozen'&&payload.supplyEntry.frozenVersion!==1)throw new Error('請先更新 Apps Script 部署，啟用冰品庫存。');
     if(item.kind==='snack'&&(payload.supplyEntry.snackVersion!==1||!SNACK_UNITS.includes(item.unit)||!SNACK_CATEGORIES.includes(canonicalSnackCategory(item.category))))throw new Error('零食分類、單位或部署版本不正確。');
     if(item.kind==='noodle'&&!['杯','碗'].includes(item.unit))throw new Error('泡麵請使用杯或碗登記。');
-    if(known&&(known.kind!==item.kind||known.unit!==item.unit))throw new Error('零食、泡麵與碳粉單位不符合已確認設定。');
+    if(known&&(known.kind!==item.kind||known.unit!==item.unit))throw new Error('零食、冰品、泡麵與碳粉單位不符合已確認設定。');
     if(item.kind==='toner'&&!SUPPLY_CATALOG.some(known=>known.kind==='toner'&&known.id===item.id))throw new Error('碳粉限黑、黃、紅、藍四個顏色。');
-    if(item.stock!==null&&!validCount(item.stock))throw new Error('零食、泡麵與碳粉庫存數量不正確。');
-    if(item.lastCountAt!==null&&!validDate(item.lastCountAt))throw new Error('零食、泡麵與碳粉盤點時間不正確。');
+    if(item.stock!==null&&!validCount(item.stock))throw new Error('零食、冰品、泡麵與碳粉庫存數量不正確。');
+    if(item.lastCountAt!==null&&!validDate(item.lastCountAt))throw new Error('零食、冰品、泡麵與碳粉盤點時間不正確。');
     ids.add(item.id);
     return supplyAvailability({id:item.id,name:item.name.trim(),kind:item.kind,unit:item.unit,active:item.active,...(item.autoArchived===true?{autoArchived:true}:{}),stock:item.stock,lastCountAt:item.lastCountAt,...(item.lastArrivalAt?{lastArrivalAt:validDate(item.lastArrivalAt)?item.lastArrivalAt:(()=>{throw new Error('入庫時間不正確。');})()}:{}),...(item.kind==='snack'?{category:canonicalSnackCategory(item.category),flavor:item.flavor||''}: {})});
   });
   const supplyEvents=payload.supplyEvents.map(event=>{
-    if(!event||typeof event.id!=='string'||!event.id||event.id.length>240||eventIds.has(event.id)||!ids.has(event.supplyId)||!['count','restock','expiry-close','expiry-set'].includes(event.type)||!validCount(event.quantity)||(['restock','expiry-set'].includes(event.type)&&event.quantity===0)||(event.type==='expiry-close'&&event.quantity!==0)||!validDate(event.createdAt)||event.accepted===false||typeof event.recorder!=='string'||!event.recorder.trim()||event.recorder.length>80||typeof event.note!=='string'||event.note.length>500)throw new Error('零食、泡麵與碳粉異動紀錄不正確。');
+    if(!event||typeof event.id!=='string'||!event.id||event.id.length>240||eventIds.has(event.id)||!ids.has(event.supplyId)||!['count','restock','expiry-close','expiry-set'].includes(event.type)||!validCount(event.quantity)||(['restock','expiry-set'].includes(event.type)&&event.quantity===0)||(event.type==='expiry-close'&&event.quantity!==0)||!validDate(event.createdAt)||event.accepted===false||typeof event.recorder!=='string'||!event.recorder.trim()||event.recorder.length>80||typeof event.note!=='string'||event.note.length>500)throw new Error('零食、冰品、泡麵與碳粉異動紀錄不正確。');
     const expiresOn=event.expiresOn||null,batchId=event.batchId||null;
     if(expiresOn!==null&&!validSupplyExpiry(expiresOn))throw new Error('保存期限格式不正確。');
     if(['expiry-close','expiry-set'].includes(event.type)&&(typeof batchId!=='string'||batchId.length>240||!batchId))throw new Error('效期批次代號不正確。');
@@ -144,5 +147,5 @@ export function normalizeSupplyWarehouse(payload) {
     const batch=supplyEvents.find(batch=>batch.id===event.batchId&&['restock','expiry-set'].includes(batch.type)&&batch.supplyId===event.supplyId);
     if(!batch||!supplySupportsExpiryHistory(supplies.find(item=>item.id===event.supplyId)?.kind))throw new Error('效期批次來源不正確。');
   }
-  return {supplies,supplyEvents,supplyEntryVersion:1,snackCatalogVersion:payload.supplyEntry.snackCatalogVersion===1?1:0,supplyExpiryVersion:payload.supplyEntry.expiryVersion===1?1:0,supplyExpirySetVersion:payload.supplyEntry.expirySetVersion===1?1:0,snackFlavorVersion:payload.supplyEntry.snackFlavorVersion===1?1:0,supplySnackVersion:payload.supplyEntry.snackVersion===1?1:0,supplySnackPolicyVersion:payload.supplyEntry.snackPolicyVersion===2?2:0};
+  return {supplies,supplyEvents,supplyEntryVersion:1,supplyFrozenVersion:payload.supplyEntry.frozenVersion===1?1:0,snackCatalogVersion:payload.supplyEntry.snackCatalogVersion===1?1:0,supplyExpiryVersion:payload.supplyEntry.expiryVersion===1?1:0,supplyExpirySetVersion:payload.supplyEntry.expirySetVersion===1?1:0,snackFlavorVersion:payload.supplyEntry.snackFlavorVersion===1?1:0,supplySnackVersion:payload.supplyEntry.snackVersion===1?1:0,supplySnackPolicyVersion:payload.supplyEntry.snackPolicyVersion===2?2:0};
 }
