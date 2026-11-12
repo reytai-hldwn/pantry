@@ -12,12 +12,12 @@ export function isLowStockItem(item) {
 }
 
 export function inventoryLowThreshold(kind) {
-  return kind==='drink'||kind==='snack'?10:kind==='noodle'?3:kind==='toner'?0:null;
+  return kind==='drink'||kind==='snack'||kind==='frozen'?10:kind==='noodle'?3:kind==='toner'?0:null;
 }
 
 export function isOutOfStockItem(item) {
   const kind=item.kind===undefined?'drink':item.kind;
-  return ['drink','snack','noodle'].includes(kind) && hasRecordedStock(item) && item.stock===0;
+  return ['drink','snack','frozen','noodle'].includes(kind) && hasRecordedStock(item) && item.stock===0;
 }
 
 export function matchesInventoryStockFilter(item,filter='all',preferences=[]) {
@@ -26,7 +26,7 @@ export function matchesInventoryStockFilter(item,filter='all',preferences=[]) {
   const kind=item.kind===undefined?'drink':item.kind,threshold=inventoryLowThreshold(kind);
   return filter==='low' && threshold!==null && hasRecordedStock(item) && Number.isSafeInteger(item.stock) &&
     (kind==='toner'?item.stock===0:item.stock>0&&item.stock<=threshold) &&
-    (kind!=='snack'||restockPreferenceMode(preferences,kind,item.id)==='consider');
+    (!['snack','frozen'].includes(kind)||restockPreferenceMode(preferences,kind,item.id)==='consider');
 }
 
 export function sortInventoryItems(items,preferences=[]) {
@@ -44,7 +44,7 @@ export function normalizeRestockPreferences(payload) {
   if(!Array.isArray(payload.restockPreferences)||payload.restockPreferences.length>2000)throw new Error('補貨提醒設定格式不正確。');
   const keys=new Set();
   const restockPreferences=payload.restockPreferences.map(entry=>{
-    if(!entry||!['drink','snack','noodle','toner'].includes(entry.kind)||typeof entry.itemId!=='string'||!/^[A-Za-z0-9_-]{1,160}$/.test(entry.itemId)||!Object.hasOwn(RESTOCK_MODES,entry.mode)||typeof entry.updatedAt!=='string'||!Number.isFinite(Date.parse(entry.updatedAt)))throw new Error('補貨提醒設定格式不正確。');
+    if(!entry||!['drink','snack','frozen','noodle','toner'].includes(entry.kind)||typeof entry.itemId!=='string'||!/^[A-Za-z0-9_-]{1,160}$/.test(entry.itemId)||!Object.hasOwn(RESTOCK_MODES,entry.mode)||typeof entry.updatedAt!=='string'||!Number.isFinite(Date.parse(entry.updatedAt)))throw new Error('補貨提醒設定格式不正確。');
     const key=`${entry.kind}:${entry.itemId}`;if(keys.has(key))throw new Error('補貨提醒設定重複。');keys.add(key);
     if(entry.zeroStockPending!==undefined&&typeof entry.zeroStockPending!=='boolean')throw new Error('無庫存處理狀態不正確。');
     return{kind:entry.kind,itemId:entry.itemId,mode:entry.mode,updatedAt:entry.updatedAt,...(entry.zeroStockPending===true?{zeroStockPending:true}:{})};

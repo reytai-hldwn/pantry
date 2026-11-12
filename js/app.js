@@ -8,7 +8,7 @@ import { GoogleInventoryStore } from './google-store.js';
 import { wishSupportDetails, wishSupportPreview } from './wish-support.js';
 import { renderDrinkInformation } from './drink-information.js';
 import { findProductPhoto } from './product-photos.js';
-import { initialSupplies, SUPPLY_KINDS, SNACK_CATEGORIES, SNACK_UNITS, supplyNeedsExpiry, supplyBatches, supplyHasUntrackedExpiry, supplyExpiryStatus, supplyToday, validSupplyExpiry } from './supplies.js';
+import { initialSupplies, SUPPLY_KINDS, SNACK_CATEGORIES, SNACK_UNITS, supplyUnits, supplyNeedsExpiry, supplyBatches, supplyHasUntrackedExpiry, supplyExpiryStatus, supplyToday, validSupplyExpiry } from './supplies.js';
 import { inventoryActivity, inventoryTotals, snackFlavorStatistics, recentArrivalEvents } from './inventory-activity.js';
 import { supplyLabel, snackPackHint, matchesSupplyInventoryFilter } from './supplies.js';
 import { RESTOCK_MODES, hasRecordedStock, isLowStockItem, isOutOfStockItem, inventoryLowThreshold, matchesInventoryStockFilter, sortInventoryItems, restockPreferenceMode } from './restock-preferences.js';
@@ -25,9 +25,9 @@ const categories = CATEGORIES_ORDER;
 const categoryNames = () => [...new Set([...categories, ...store.data.drinks.map((drink) => drink.category)])];
 const activeDrinks = () => store.data.drinks.filter((drink) => drink.active !== false);
 const packagingTypes = ['窄瓶鋁箔包', '鋁箔包', '鐵罐', '小型鐵罐', '長鐵罐', '寶特瓶', '大瓶裝', '其他'];
-const restockViews = { restock: 'drink', 'restock-snack':'snack', 'restock-noodle': 'noodle', 'restock-toner': 'toner' };
+const restockViews = { restock: 'drink', 'restock-snack':'snack', 'restock-frozen':'frozen', 'restock-noodle': 'noodle', 'restock-toner': 'toner' };
 const NEW_ARRIVAL_VALUE = '__new__';
-const viewNames = { overview: '飲料冰箱', wishes: '採買許願池', archive: '歷史品項', admin: '管理後台', products: '倉庫庫存', count: '快速盤點', restock: '到貨入庫 · 飲料', 'restock-snack':'到貨入庫 · 零食', 'restock-noodle': '到貨入庫 · 泡麵', 'restock-toner': '到貨入庫 · 碳粉', 'manage-wishes': '願望管理', history: '異動紀錄' };
+const viewNames = { overview: '飲料冰箱', wishes: '採買許願池', archive: '歷史品項', admin: '管理後台', products: '倉庫庫存', count: '快速盤點', restock: '到貨入庫 · 飲料', 'restock-snack':'到貨入庫 · 零食', 'restock-frozen':'到貨入庫 · 冰品', 'restock-noodle': '到貨入庫 · 泡麵', 'restock-toner': '到貨入庫 · 碳粉', 'manage-wishes': '願望管理', history: '異動紀錄' };
 viewNames.consumption = '消耗排行榜';
 viewNames.gacha = '今日補給扭蛋';
 const adminViews = new Set(['admin', 'consumption', 'products', 'count', ...Object.keys(restockViews), 'manage-wishes', 'history']);
@@ -58,7 +58,7 @@ let supplyFilter = 'all';
 let supplyCategory = '';
 let supplyProduct = '';
 let countKind = 'drink';
-const countFilters=Object.fromEntries(['drink','snack','noodle','toner'].map(kind=>[kind,{category:'',product:'',query:''}]));
+const countFilters=Object.fromEntries(['drink','snack','frozen','noodle','toner'].map(kind=>[kind,{category:'',product:'',query:''}]));
 let popularityExpanded = false;
 let popularityLoading = false;
 let popularityError = false;
@@ -208,8 +208,8 @@ function newDrinkCategoryField(batch = false) {
 }
 
 function batchRowMarkup(kind='snack') {
-  const units=kind==='drink'?['包','瓶','罐']:kind==='noodle'?['杯','碗']:kind==='toner'?['盒']:SNACK_UNITS;
-  return `<div class="batch-row-heading"><label class="field">分類<select data-batch-kind>${[['drink','飲料'],['snack','零食'],['noodle','泡麵'],['toner','碳粉']].map(([value,label])=>`<option value="${value}"${kind===value?' selected':''}>${label}</option>`).join('')}</select></label>${button('移除此列','batch-remove','type="button"','button-small button-plain')}</div><label class="field">找品名／口味<input type="search" data-batch-search maxlength="80" placeholder="輸入關鍵字縮小選單"></label><label class="field">入庫品項<select data-batch-item required></select></label><fieldset class="batch-new" disabled hidden><legend>新增品項</legend><label class="field">品名<input data-batch-name required maxlength="80"></label>${kind==='snack'?`<label class="field">口味（選填）<input data-batch-flavor maxlength="80"></label><label class="field">零食分類<select data-batch-category required><option value="" selected disabled>選擇分類</option>${SNACK_CATEGORIES.map(category=>`<option>${h(category)}</option>`).join('')}</select></label>`:kind==='drink'?newDrinkCategoryField(true):''}<label class="field">單位<select data-batch-unit>${units.map(unit=>`<option>${unit}</option>`).join('')}</select></label></fieldset><p class="subtle" data-batch-pack-hint hidden></p><div class="form-grid"><label class="field"><span data-batch-quantity-label>本次入庫數量</span><input data-batch-quantity required type="number" inputmode="numeric" min="1" max="999999" step="1"></label>${kind==='noodle'?`<label class="field">保存期限（必填）<input data-batch-expiry type="date" required min="${supplyToday()}"></label>`:''}</div><label class="field">備註（選填）<input data-batch-note maxlength="500"></label>`;
+  const units=kind==='drink'?['包','瓶','罐']:supplyUnits(kind);
+  return `<div class="batch-row-heading"><label class="field">分類<select data-batch-kind>${[['drink','飲料'],['snack','零食'],['frozen','冰品'],['noodle','泡麵'],['toner','碳粉']].map(([value,label])=>`<option value="${value}"${kind===value?' selected':''}${value==='frozen'&&!store.supportsFrozen?' disabled':''}>${label}</option>`).join('')}</select></label>${button('移除此列','batch-remove','type="button"','button-small button-plain')}</div><label class="field">找品名／口味<input type="search" data-batch-search maxlength="80" placeholder="輸入關鍵字縮小選單"></label><label class="field">入庫品項<select data-batch-item required></select></label><fieldset class="batch-new" disabled hidden><legend>新增品項</legend><label class="field">品名<input data-batch-name required maxlength="80"></label>${kind==='snack'?`<label class="field">口味（選填）<input data-batch-flavor maxlength="80"></label><label class="field">零食分類<select data-batch-category required><option value="" selected disabled>選擇分類</option>${SNACK_CATEGORIES.map(category=>`<option>${h(category)}</option>`).join('')}</select></label>`:kind==='drink'?newDrinkCategoryField(true):''}<label class="field">單位<select data-batch-unit>${units.map(unit=>`<option>${unit}</option>`).join('')}</select></label></fieldset><p class="subtle" data-batch-pack-hint hidden></p><div class="form-grid"><label class="field"><span data-batch-quantity-label>本次入庫數量</span><input data-batch-quantity required type="number" inputmode="numeric" min="1" max="999999" step="1"></label>${kind==='noodle'?`<label class="field">保存期限（必填）<input data-batch-expiry type="date" required min="${supplyToday()}"></label>`:''}</div><label class="field">備註（選填）<input data-batch-note maxlength="500"></label>`;
 }
 function updateBatchPicker(row){
   const kind=row.querySelector('[data-batch-kind]').value,select=row.querySelector('[data-batch-item]'),selected=select.value,query=row.querySelector('[data-batch-search]').value.trim().toLocaleLowerCase();
@@ -232,7 +232,7 @@ function appendBatchRow(form,kind){
 }
 function openBatchArrival(){
   if(!store.supportsBatchArrival)throw new Error('請先更新原 Apps Script 部署，啟用批次多品項入庫。');
-  showModal('批次多品項入庫','可混合四個分類，依單位數量入庫；同品項不同效期可分列。一次最多 30 列。',`<form id="batch-arrival-form">${recorderField()}<div class="batch-rows"></div><div class="form-actions">${button('＋ 新增一列','batch-add','type="button"','button-outline')}<button type="submit" class="button">確認整批入庫</button></div><p class="subtle">先檢查整批資料，再一次儲存。零食口味選填，泡麵每列必填保存期限。</p></form>`);
+  showModal('批次多品項入庫','可混合五個分類，依單位數量入庫；同品項不同效期可分列。一次最多 30 列。',`<form id="batch-arrival-form">${recorderField()}<div class="batch-rows"></div><div class="form-actions">${button('＋ 新增一列','batch-add','type="button"','button-outline')}<button type="submit" class="button">確認整批入庫</button></div><p class="subtle">先檢查整批資料，再一次儲存。零食口味選填，泡麵每列必填保存期限。</p></form>`);
   appendBatchRow($('#batch-arrival-form'),restockViews[view]||warehouseKind||'snack');
 }
 function openSnackDetails(id){
@@ -247,14 +247,14 @@ function renderSnackFlavorStats(){
 
 function renderWarehouse() {
   const marked = store.data.drinks.filter((drink) => needsRestock(drink)).length;
-  const tabs=`<div class="warehouse-kind-tabs" role="group" aria-label="庫存類型">${[['drink','飲料'],['snack','零食'],['noodle','泡麵'],['toner','碳粉']].map(([kind,label])=>`<button type="button" class="filter-tab${warehouseKind===kind?' selected':''}" data-action="warehouse-kind" data-id="${kind}" aria-pressed="${warehouseKind===kind}">${label}</button>`).join('')}</div>`;
-  const actions=button('↓ 匯出庫存','export','','button-outline')+(warehouseKind==='drink'?button('＋ 快速新增飲料','quick-add-drink'):button(warehouseKind==='snack'?'快速盤點零食':'盤點這一類','supply-count-kind',`data-id="${warehouseKind}"${store.supportsSupplies?'':' disabled'}`));
+  const tabs=`<div class="warehouse-kind-tabs" role="group" aria-label="庫存類型">${[['drink','飲料'],['snack','零食'],['frozen','冰品'],['noodle','泡麵'],['toner','碳粉']].map(([kind,label])=>`<button type="button" class="filter-tab${warehouseKind===kind?' selected':''}" data-action="warehouse-kind" data-id="${kind}" aria-pressed="${warehouseKind===kind}">${label}</button>`).join('')}</div>`;
+  const actions=(warehouseKind==='frozen'?'<a href="#restock-frozen" class="button">＋ 新增冰品</a>':'')+button('↓ 匯出庫存','export','','button-outline')+(warehouseKind==='drink'?button('＋ 快速新增飲料','quick-add-drink'):button(warehouseKind==='snack'?'快速盤點零食':'盤點這一類','supply-count-kind',`data-id="${warehouseKind}"${canSupplyArrive(warehouseKind)?'':' disabled'}`));
   main.innerHTML=heading('WAREHOUSE INVENTORY','倉庫庫存，補貨有依據','人工勾選需要補貨的品項排最前、數字標紅；其餘由少到多排列，尚無數量紀錄排最後。',actions)+tabs+restockPreferenceNotice();
   if(warehouseKind==='drink'){
     main.innerHTML+=`<div class="admin-summary"><span>${activeDrinks().length} 種供應中</span><span class="warehouse-alert">${marked} 種已勾選需要補貨</span><span>最近完整盤點 ${formatDate(store.data.lastInventoryAt)}</span></div><div class="inventory-panel">${inventoryToolbar(true)}<div id="inventory-table"></div></div>`;
     renderInventoryTable();
   }else{
-    main.innerHTML+=supplyUpgradeNotice(warehouseKind)+(supplyNeedsExpiry(warehouseKind)?supplyExpirySetNotice():'')+`<div class="supply-intro"><p>${warehouseKind==='toner'?'固定黑、黃、紅、藍四色，單位為盒。':warehouseKind==='snack'?'依包裝單位登記，數量是最近確認與後續入庫的紀錄值。快沒了時可更新數量，想補貨時手動勾選。':'依品項使用杯或碗。入庫必填保存期限，分批保留；30 天內到期會提醒。'}直接填寫數量，不做整箱換算；未盤點不當作 0。</p></div>${renderSupplySearchControls()}${warehouseKind==='snack'?'<p class="subtle snack-stock-policy">庫存量少只列出數量 1–10 且已勾選需要補貨的零食；0 自動歸入歷史品項。各口味分開紀錄，零食不顯示效期提醒。</p>':''}<div class="supply-stock-filters filter-tabs" role="group" aria-label="庫存範圍">${[['low','庫存量少'],['all','供應中'],...(warehouseKind==='toner'?[]:[['archived','歷史品項']])].map(([value,label])=>`<button type="button" class="filter-tab${supplyFilter===value?' selected':''}" data-action="supply-stock-filter" data-id="${value}" aria-pressed="${supplyFilter===value}">${label}</button>`).join('')}</div><div class="inventory-panel" id="supply-inventory"></div>`;
+    main.innerHTML+=supplyUpgradeNotice(warehouseKind)+(supplyNeedsExpiry(warehouseKind)?supplyExpirySetNotice():'')+`<div class="supply-intro"><p>${warehouseKind==='frozen'?'冰品依支、杯、盒等實際包裝登記，補貨以人工勾選為準；庫存為 0 自動歸入歷史品項。':warehouseKind==='toner'?'固定黑、黃、紅、藍四色，單位為盒。':warehouseKind==='snack'?'依包裝單位登記，數量是最近確認與後續入庫的紀錄值。快沒了時可更新數量，想補貨時手動勾選。':'依品項使用杯或碗。入庫必填保存期限，分批保留；30 天內到期會提醒。'}直接填寫數量，不做整箱換算；未盤點不當作 0。</p></div>${renderSupplySearchControls()}${warehouseKind==='snack'?'<p class="subtle snack-stock-policy">庫存量少只列出數量 1–10 且已勾選需要補貨的零食；0 自動歸入歷史品項。各口味分開紀錄，零食不顯示效期提醒。</p>':''}<div class="supply-stock-filters filter-tabs" role="group" aria-label="庫存範圍">${[['low','庫存量少'],['all','供應中'],...(warehouseKind==='toner'?[]:[['archived','歷史品項']])].map(([value,label])=>`<button type="button" class="filter-tab${supplyFilter===value?' selected':''}" data-action="supply-stock-filter" data-id="${value}" aria-pressed="${supplyFilter===value}">${label}</button>`).join('')}</div><div class="inventory-panel" id="supply-inventory"></div>`;
     renderSupplyInventory();
     main.insertAdjacentHTML('beforeend',renderSnackFlavorStats());
   }
@@ -271,7 +271,7 @@ function renderSupplySearchControls() {
 }
 function supplyCountCell(item) {
   const icons = { '太空包':'🥔', '巧克力':'🍫', '甜/鹹餅乾':'🍪', '健康零食':'🌾', '蛋白質零食':'💪', '其他鹹食':'🥨', '其他甜食':'🍬' };
-  const icon = item.kind === 'toner' ? `<span class="toner-swatch toner-${h(item.id.split('-').pop())}"></span>` : item.kind === 'noodle' ? '🍜' : icons[item.category] || '🍿';
+  const icon = item.kind === 'toner' ? `<span class="toner-swatch toner-${h(item.id.split('-').pop())}"></span>` : item.kind === 'noodle' ? '🍜' : item.kind === 'frozen' ? '❄️' : icons[item.category] || '🍿';
   return `<div class="supply-count-item"><span class="drink-avatar supply-count-avatar" aria-hidden="true">${icon}</span><span class="supply-count-label"><strong>${h(item.name)}</strong><small>${item.flavor ? `${h(item.flavor)} · ` : ''}${h(item.kind === 'snack' ? item.category : SUPPLY_KINDS[item.kind])}</small></span></div>`;
 }
 function supplyCountTable(items) {
@@ -285,7 +285,7 @@ function renderSupplyInventory(){
     const arrival=(store.supplyEvents||[]).filter(event=>event.supplyId===item.id&&event.type==='restock').sort((a,b)=>Date.parse(b.createdAt)-Date.parse(a.createdAt))[0];
     const color=item.kind==='toner'?item.id.split('-').pop():'';
     const canArrive=canSupplyArrive(item.kind)&&(item.active!==false||store.supportsArchivedArrivals);
-    return `<tr data-supply-id="${h(item.id)}"><td class="supply-col-name"><div class="supply-name">${color?`<span class="toner-swatch toner-${h(color)}" aria-hidden="true"></span>`:`<span class="noodle-mark" aria-hidden="true">${item.kind==='snack'?'▧':'♨'}</span>`}<strong>${h(supplyLabel(item))}</strong></div><span class="cell-note">單位：${h(item.unit)}${item.kind==='snack'?` · ${h(item.category)}`:''}</span></td><td class="supply-col-stock" data-label="${item.kind==='snack'?'紀錄數量':'庫存數量'}"><div class="stock-value ${needsRestock(item,item.kind)?'low warehouse-low':''}">${item.stock===null?(item.kind==='snack'?'尚未確認':'待盤點'):item.stock}<small>${item.stock===null?'':h(item.unit)}</small></div>${item.active===false?'<span class="pill pill-muted">歷史品項</span>':''}${restockState(item,item.kind)}</td>${supplyNeedsExpiry(item.kind)?`<td class="supply-col-expiry" data-label="保存期限／入庫批次">${renderSupplyBatches(item)}</td>`:''}<td class="cell-note supply-col-count" data-label="${item.kind==='snack'?'最近數量更新':'最近盤點'}">${formatDate(item.kind==='snack'?[item.lastCountAt,item.lastArrivalAt].filter(Boolean).sort().at(-1):item.lastCountAt,true)}</td><td class="cell-note supply-col-arrival" data-label="最近入庫">${arrival?`${formatDate(arrival.createdAt,true)} · ＋${arrival.quantity} ${h(item.unit)}`:'尚無紀錄'}</td><td class="supply-col-actions"><div class="inline-actions">${button('＋ 快速入庫','supply-arrival',`data-id="${h(item.id)}"${canArrive?'':' disabled'}`,'button-small button-outline')}${supplyNeedsExpiry(item.kind)?button('補登效期','supply-expiry-set',`data-id="${h(item.id)}"${store.supportsSupplyExpirySet&&(item.kind!=='snack'||store.supportsSnacks)&&item.lastCountAt&&item.stock>0?'':' disabled'}`,'button-small button-outline'):''}${item.kind==='snack'?button('編輯品名／口味','snack-details',`data-id="${h(item.id)}"${store.supportsSnackFlavors&&item.active!==false?'':' disabled'}`,'button-small button-plain'):''}${item.active===false?'':button(item.kind==='snack'?'更新數量':'盤點','supply-count',`data-id="${h(item.id)}"${store.supportsSupplies&&(item.kind!=='snack'||store.supportsSnacks)?'':' disabled'}`,'button-small button-plain')}</div></td></tr>`;
+    return `<tr data-supply-id="${h(item.id)}"><td class="supply-col-name"><div class="supply-name">${color?`<span class="toner-swatch toner-${h(color)}" aria-hidden="true"></span>`:`<span class="noodle-mark" aria-hidden="true">${item.kind==='snack'?'▧':item.kind==='frozen'?'❄':'♨'}</span>`}<strong>${h(supplyLabel(item))}</strong></div><span class="cell-note">單位：${h(item.unit)}${item.kind==='snack'?` · ${h(item.category)}`:''}</span></td><td class="supply-col-stock" data-label="${item.kind==='snack'?'紀錄數量':'庫存數量'}"><div class="stock-value ${needsRestock(item,item.kind)?'low warehouse-low':''}">${item.stock===null?(item.kind==='snack'?'尚未確認':'待盤點'):item.stock}<small>${item.stock===null?'':h(item.unit)}</small></div>${item.active===false?'<span class="pill pill-muted">歷史品項</span>':''}${restockState(item,item.kind)}</td>${supplyNeedsExpiry(item.kind)?`<td class="supply-col-expiry" data-label="保存期限／入庫批次">${renderSupplyBatches(item)}</td>`:''}<td class="cell-note supply-col-count" data-label="${item.kind==='snack'?'最近數量更新':'最近盤點'}">${formatDate(item.kind==='snack'?[item.lastCountAt,item.lastArrivalAt].filter(Boolean).sort().at(-1):item.lastCountAt,true)}</td><td class="cell-note supply-col-arrival" data-label="最近入庫">${arrival?`${formatDate(arrival.createdAt,true)} · ＋${arrival.quantity} ${h(item.unit)}`:'尚無紀錄'}</td><td class="supply-col-actions"><div class="inline-actions">${button('＋ 快速入庫','supply-arrival',`data-id="${h(item.id)}"${canArrive?'':' disabled'}`,'button-small button-outline')}${supplyNeedsExpiry(item.kind)?button('補登效期','supply-expiry-set',`data-id="${h(item.id)}"${store.supportsSupplyExpirySet&&(item.kind!=='snack'||store.supportsSnacks)&&item.lastCountAt&&item.stock>0?'':' disabled'}`,'button-small button-outline'):''}${item.kind==='snack'?button('編輯品名／口味','snack-details',`data-id="${h(item.id)}"${store.supportsSnackFlavors&&item.active!==false?'':' disabled'}`,'button-small button-plain'):''}${item.active===false?'':button(item.kind==='snack'?'更新數量':'盤點','supply-count',`data-id="${h(item.id)}"${store.supportsSupplies&&(item.kind!=='snack'||store.supportsSnacks)?'':' disabled'}`,'button-small button-plain')}</div></td></tr>`;
   }).join('')}</tbody></table></div><div class="table-bottom">顯示 ${items.length} 種${SUPPLY_KINDS[warehouseKind]} · 每次登記保留時間與登記人</div>`:empty('找不到這個品項','換個關鍵字看看。');
 }
 
@@ -325,7 +325,7 @@ function openSupplyExpiryEditor(id) {
 
 function supplyUpgradeNotice(kind) {
   if (canSupplyArrive(kind)) return '';
-  return `<div class="info-box supply-upgrade">Google 端尚未啟用${kind==='snack'?'新版零食入庫與手動補貨標記':store.supportsSupplies?'保存期限':'用品庫存儲存'}功能。更新 Apps Script 原部署後即可使用，原有資料會保留。<a href="https://github.com/reytai-hldwn/pantry/blob/main/docs/SUPPLIES-SETUP.md" target="_blank" rel="noopener noreferrer">查看更新說明 ↗</a></div>`;
+  return `<div class="info-box supply-upgrade">Google 端尚未啟用${kind==='frozen'?'冰品庫存':kind==='snack'?'新版零食入庫與手動補貨標記':store.supportsSupplies?'保存期限':'用品庫存儲存'}功能。更新 Apps Script 原部署後即可使用，原有資料會保留。<a href="https://github.com/reytai-hldwn/pantry/blob/main/docs/SUPPLIES-SETUP.md" target="_blank" rel="noopener noreferrer">查看更新說明 ↗</a></div>`;
 }
 
 function supplyArrivalFields(item) {
@@ -333,11 +333,11 @@ function supplyArrivalFields(item) {
 }
 
 function canSupplyArrive(kind) {
-  return store.supportsSupplies && (kind!=='snack'||store.supportsSnackNoExpiry) && (!supplyNeedsExpiry(kind)||store.supportsSupplyExpiry);
+  return store.supportsSupplies && (kind!=='snack'||store.supportsSnackNoExpiry) && (kind!=='frozen'||store.supportsFrozen) && (!supplyNeedsExpiry(kind)||store.supportsSupplyExpiry);
 }
 
 function newArrivalOption(kind='drink') {
-  const enabled=store.supportsNewArrivals&&(kind!=='snack'||store.supportsSnackNoExpiry);
+  const enabled=store.supportsNewArrivals&&(kind!=='snack'||store.supportsSnackNoExpiry)&&(kind!=='frozen'||store.supportsFrozen);
   return `<option value="${NEW_ARRIVAL_VALUE}"${enabled?'':' disabled'}>其他／新品${enabled?'':'（請先更新 Google 部署）'}</option>`;
 }
 
@@ -346,8 +346,8 @@ function arrivalOptionLabel(item) {
 }
 
 function newArrivalFields(kind) {
-  const units=kind==='drink'?['包','瓶','罐']:kind==='snack'?SNACK_UNITS:['杯','碗'];
-  return `<fieldset class="new-arrival-fields" hidden disabled><legend>登記新品</legend><label class="field">品項名稱<input name="newName" required maxlength="80" placeholder="請填寫品名，口味可填在下方"></label>${kind==='snack'?`<label class="field">口味（選填）<input name="newFlavor" maxlength="80" placeholder="例如：香菜、超濃起司"${store.supportsSnackFlavors?'':' disabled'}></label><label class="field">零食分類<select name="newCategory" required><option value="" selected disabled>請選擇分類</option>${SNACK_CATEGORIES.map(category=>`<option value="${h(category)}">${h(category)}</option>`).join('')}</select></label>`:kind==='drink'?newDrinkCategoryField():''}<label class="field">單位<select name="newUnit" required><option value="" disabled${kind==='snack'?'':' selected'}>請選擇單位</option>${units.map(unit=>`<option value="${unit}"${kind==='snack'&&unit==='包'?' selected':''}>${unit}</option>`).join('')}</select></label><p class="subtle">新品與本次到貨會一起保存，之後可直接從選單選取。首次庫存直接採用本次入庫數量，之後可盤點校正${kind==='drink'?'；先使用包裝示意圖，圖片與營養資訊可之後補齊':''}。</p></fieldset>`;
+  const units=kind==='drink'?['包','瓶','罐']:supplyUnits(kind);
+  return `<fieldset class="new-arrival-fields" hidden disabled><legend>登記新品</legend><label class="field">品項名稱<input name="newName" required maxlength="80" placeholder="${kind==='snack'?'請填寫品名，口味可填在下方':'請填寫完整品名'}"></label>${kind==='snack'?`<label class="field">口味（選填）<input name="newFlavor" maxlength="80" placeholder="例如：香菜、超濃起司"${store.supportsSnackFlavors?'':' disabled'}></label><label class="field">零食分類<select name="newCategory" required><option value="" selected disabled>請選擇分類</option>${SNACK_CATEGORIES.map(category=>`<option value="${h(category)}">${h(category)}</option>`).join('')}</select></label>`:kind==='drink'?newDrinkCategoryField():''}<label class="field">單位<select name="newUnit" required><option value="" disabled${kind==='snack'?'':' selected'}>請選擇單位</option>${units.map(unit=>`<option value="${unit}"${kind==='snack'&&unit==='包'?' selected':''}>${unit}</option>`).join('')}</select></label><p class="subtle">新品與本次到貨會一起保存，之後可直接從選單選取。首次庫存直接採用本次入庫數量，之後可盤點校正${kind==='drink'?'；先使用包裝示意圖，圖片與營養資訊可之後補齊':''}。</p></fieldset>`;
 }
 
 function toggleNewArrivalFields(form, visible) {
@@ -363,8 +363,8 @@ function updateSupplyArrivalSummary(form = modal.open ? $('#supply-arrival-form'
   if (!form) return;
   const selected=form.elements.supplyId?.value||form.dataset.id,isNew=selected===NEW_ARRIVAL_VALUE;
   toggleNewArrivalFields(form,isNew);
-  const item=isNew?{unit:form.elements.newUnit.value||(form.dataset.kind==='snack'?'包':'杯／碗'),stock:null}:supplyById(selected);
-  if (!item) { const quantityLabel=form.querySelector('[data-supply-quantity-label]');if(quantityLabel)quantityLabel.textContent='本次入庫數量';const summary=form.querySelector('[data-supply-arrival-summary]');if(summary)summary.textContent='請先選擇品項，或新增這次到貨的零食。';return; }
+  const item=isNew?{unit:form.elements.newUnit.value||(form.dataset.kind==='snack'?'包':form.dataset.kind==='frozen'?'支／杯／盒':'杯／碗'),stock:null}:supplyById(selected);
+  if (!item) { const quantityLabel=form.querySelector('[data-supply-quantity-label]');if(quantityLabel)quantityLabel.textContent='本次入庫數量';const summary=form.querySelector('[data-supply-arrival-summary]');if(summary)summary.textContent='請先選擇品項，或新增這次到貨的商品。';return; }
   form.querySelector('[data-supply-quantity-label]').textContent = `本次入庫數量（${item.unit}）`;
   const quantity = Math.max(0, Number(form.elements.quantity.value) || 0);
   form.querySelector('[data-supply-arrival-summary]').innerHTML = `目前帳面庫存：<strong>${item.stock===null?'待盤點':`${item.stock} ${h(item.unit)}`}</strong><br>本次入庫：<strong>${quantity} ${h(item.unit)}</strong><br>入庫後帳面庫存：<strong>${item.stock===null?`${quantity} ${h(item.unit)}（首次入庫）`:`${item.stock+quantity} ${h(item.unit)}`}</strong>${item.active===false?'<p>歷史品項：送出成功後會恢復供應，沿用原品項與庫存紀錄。</p>':''}${snackPackHint(item)?`<p>${h(snackPackHint(item))}</p>`:''}`;
@@ -499,10 +499,10 @@ function updateCountFilters() {
 }
 
 function renderCount() {
-  const countTabs=`<div class="warehouse-kind-tabs" role="group" aria-label="快速盤點分類">${[['drink','飲料'],['snack','零食'],['noodle','泡麵'],['toner','碳粉']].map(([kind,label])=>`<button class="filter-tab${countKind===kind?' selected':''}" data-action="count-kind" data-id="${kind}" aria-pressed="${countKind===kind}">${label}</button>`).join('')}</div>`;
+  const countTabs=`<div class="warehouse-kind-tabs" role="group" aria-label="快速盤點分類">${[['drink','飲料'],['snack','零食'],['frozen','冰品'],['noodle','泡麵'],['toner','碳粉']].map(([kind,label])=>`<button class="filter-tab${countKind===kind?' selected':''}" data-action="count-kind" data-id="${kind}" aria-pressed="${countKind===kind}">${label}</button>`).join('')}</div>`;
   if(countKind!=='drink'){
     const items=sortedCountItems(supplyItems().filter(item=>item.kind===countKind&&item.active!==false));
-    main.innerHTML=heading('QUICK STOCKTAKE','快速盤點','只填有確認的品項；空白保留原紀錄，確認已用完才填 0。')+countTabs+supplyUpgradeNotice(countKind)+countFilterControls(items)+`<form id="supply-count-form">${recorderField()}${supplyCountTable(items)}<div class="sticky-actions"><span>空白不更新</span><button type="submit" class="button"${store.supportsSupplies?'':' disabled'}>儲存本次盤點</button></div></form>`;updateCountFilters();return;
+    main.innerHTML=heading('QUICK STOCKTAKE','快速盤點','只填有確認的品項；空白保留原紀錄，確認已用完才填 0。')+countTabs+supplyUpgradeNotice(countKind)+countFilterControls(items)+`<form id="supply-count-form">${recorderField()}${supplyCountTable(items)}<div class="sticky-actions"><span>空白不更新</span><button type="submit" class="button"${canSupplyArrive(countKind)?'':' disabled'}>儲存本次盤點</button></div></form>`;updateCountFilters();return;
   }
   const drinks = sortedCountItems(activeDrinks());
   main.innerHTML = heading('A FRESH COUNT', '幫飲料架點個名', '每三天或一週盤點一次，就很夠用了。請填實際剩餘的單瓶／單罐數量。') +
@@ -514,13 +514,13 @@ function renderCount() {
 
 function renderRestock() {
   const kind = restockViews[view];
-  const tabs = `<nav class="warehouse-kind-tabs restock-kind-tabs" aria-label="到貨入庫分類">${Object.entries(restockViews).map(([route, value])=>`<a class="filter-tab${kind===value?' selected':''}" href="#${route}"${kind===value?' aria-current="page"':''}>${value==='drink'?'飲料':SUPPLY_KINDS[value]}</a>`).join('')}</nav><div class="batch-entry">${button('＋ 批次多品項入庫','batch-arrival','type="button"','button-outline')}<span class="subtle">可混合飲料、零食、泡麵與碳粉，一次送出。</span></div>`;
+  const tabs = `<nav class="warehouse-kind-tabs restock-kind-tabs" aria-label="到貨入庫分類">${Object.entries(restockViews).map(([route, value])=>`<a class="filter-tab${kind===value?' selected':''}" href="#${route}"${kind===value?' aria-current="page"':''}>${value==='drink'?'飲料':SUPPLY_KINDS[value]}</a>`).join('')}</nav><div class="batch-entry">${button('＋ 批次多品項入庫','batch-arrival','type="button"','button-outline')}<span class="subtle">可混合飲料、零食、冰品、泡麵與碳粉，一次送出。</span></div>`;
   if (kind !== 'drink') { renderSupplyRestock(kind, tabs); return; }
   if (store.mode === 'google' && !store.supportsWebsiteEntry) { renderGoogleEntry(tabs); return; }
   const drinks = arrivalItems('drink');
   const arrivals = recentArrivalEvents(store.data.events);
   const options = drinks;
-  main.innerHTML = heading('A LITTLE REFILL', '到貨了，記一筆就好', '飲料、零食、泡麵與碳粉分頁登記，各自保留入庫紀錄。') + tabs +
+  main.innerHTML = heading('A LITTLE REFILL', '到貨了，記一筆就好', '飲料、零食、冰品、泡麵與碳粉分頁登記，各自保留入庫紀錄。') + tabs +
     '<div class="info-box">只登記已實際收到的飲料。請先分清楚單位：收到 24 包，就在「單包數量」填 24；收到 1 整箱，才在「整箱數量」填 1。兩欄都填會加總；分批到貨就分次登記。</div>' +
     ((drinks.length || store.supportsNewArrivals) ? `<div class="restock-layout"><section class="panel form-panel"><h2>飲料到貨入庫</h2>${newArrivalUpgradeNotice()}<form id="restock-form">${recorderField()}<label class="field">飲料品項<select name="drinkId" id="restock-drink">${options.map(drink=>arrivalOptionHtml(drink)).join('')}${newArrivalOption()}</select></label>${newArrivalFields('drink')}<div class="form-grid"><label class="field"><span id="loose-label">單包／瓶／罐數量</span><input name="loose" type="number" inputmode="numeric" min="0" max="999999" step="1" placeholder="例如：24"><small id="loose-hint">實際到貨數量，整箱另填</small></label><label class="field" data-arrival-cases><span id="cases-label">整箱數量（箱）</span><input name="cases" type="number" inputmode="numeric" min="0" max="9999" step="1" placeholder="例如：1"><small id="cases-hint">填箱數，不是包數</small></label></div><label class="field">備註（選填）<input name="note" maxlength="200" placeholder="例如：下午到貨、分批入庫"></label><div id="restock-summary" class="order-summary"></div><div class="form-actions"><button type="submit" class="button" id="restock-submit">確認到貨入庫</button></div><p class="subtle">儲存時會自動記錄本次入庫時間。</p></form></section><section><div class="section-heading"><h2>最近3天入庫紀錄</h2><a href="#history" class="text-link">完整紀錄 ↗</a></div><div class="panel" data-recent-arrivals><p class="subtle">最近72小時，共 ${arrivals.length} 筆</p>${arrivals.length ? arrivals.map((event) => {
       const drink = eventItem(event);
@@ -556,11 +556,11 @@ function renderSupplyRestock(kind, tabs) {
   const label = SUPPLY_KINDS[kind];
   const items = arrivalItems(kind);
   const enabled = canSupplyArrive(kind);
-  const food=supplyNeedsExpiry(kind),canCreate=food||kind==='snack';
+  const food=supplyNeedsExpiry(kind),canCreate=food||kind==='snack'||kind==='frozen';
   const arrivals = recentArrivalEvents((store.supplyEvents||[]).filter(event=>supplyById(event.supplyId)?.kind===kind));
-  main.innerHTML = heading('A LITTLE REFILL', '到貨了，記一筆就好', '飲料、零食、泡麵與碳粉分頁登記，各自保留入庫紀錄。') + tabs + supplyUpgradeNotice(kind) +
-    `<div class="info-box">${kind==='snack'?'先用分類和關鍵字找商品；找不到就新增。零食不必填保存期限，也不顯示效期提醒。':kind==='noodle'?'依品項以杯或碗登記，保存期限必填；不同期限請分次入庫。':'固定黑、黃、紅、藍四色，以盒登記。'}只記錄實際到貨數量，不做整箱換算。</div>` +
-    `<div class="restock-layout"><section class="panel form-panel"><h2>${label}到貨入庫</h2>${canCreate?newArrivalUpgradeNotice():''}${items.length||(kind==='snack'&&enabled)?`<form id="supply-restock-form" data-kind="${kind}"><fieldset class="arrival-fields" aria-label="${label}入庫資料"${enabled?'':' disabled'}>${kind==='snack'?snackPickerFields():''}<label class="field">${label}品項<select name="supplyId" id="restock-supply" required>${items.map(item=>arrivalOptionHtml(item)).join('')}${canCreate?newArrivalOption(kind):''}</select></label>${kind==='snack'?'<p class="snack-selected-info subtle" data-snack-selection></p>':''}${canCreate?newArrivalFields(kind):''}${supplyArrivalFields(items[0]||{kind,unit:'包'})}<div class="form-actions"><button type="submit" class="button">確認到貨入庫</button></div><p class="subtle">每次入庫保留登記人與時間${food?'，保存期限可在倉庫庫存查看':''}。</p></fieldset></form>`:empty('目前沒有可入庫的品項','請先確認庫存品項設定。')}</section><section aria-label="${label}最近入庫紀錄"><div class="section-heading"><h2>${label}最近3天入庫紀錄</h2><a href="#history" class="text-link">完整紀錄 ↗</a></div><div class="panel" data-recent-arrivals><p class="subtle">最近72小時，共 ${arrivals.length} 筆</p>${arrivals.length?arrivals.map(event=>{
+  main.innerHTML = heading('A LITTLE REFILL', '到貨了，記一筆就好', '飲料、零食、冰品、泡麵與碳粉分頁登記，各自保留入庫紀錄。') + tabs + supplyUpgradeNotice(kind) +
+    `<div class="info-box">${kind==='frozen'?'依支、杯、盒等包裝單位登記，找不到商品可選「其他／新品」直接新增。':kind==='snack'?'先用分類和關鍵字找商品；找不到就新增。零食不必填保存期限，也不顯示效期提醒。':kind==='noodle'?'依品項以杯或碗登記，保存期限必填；不同期限請分次入庫。':'固定黑、黃、紅、藍四色，以盒登記。'}只記錄實際到貨數量，不做整箱換算。</div>` +
+    `<div class="restock-layout"><section class="panel form-panel"><h2>${label}到貨入庫</h2>${canCreate?newArrivalUpgradeNotice():''}${items.length||(['snack','frozen'].includes(kind)&&enabled)?`<form id="supply-restock-form" data-kind="${kind}"><fieldset class="arrival-fields" aria-label="${label}入庫資料"${enabled?'':' disabled'}>${kind==='snack'?snackPickerFields():''}<label class="field">${label}品項<select name="supplyId" id="restock-supply" required>${items.map(item=>arrivalOptionHtml(item)).join('')}${canCreate?newArrivalOption(kind):''}</select></label>${kind==='snack'?'<p class="snack-selected-info subtle" data-snack-selection></p>':''}${canCreate?newArrivalFields(kind):''}${supplyArrivalFields(items[0]||{kind,unit:supplyUnits(kind)[0]})}<div class="form-actions"><button type="submit" class="button">確認到貨入庫</button></div><p class="subtle">每次入庫保留登記人與時間${food?'，保存期限可在倉庫庫存查看':''}。</p></fieldset></form>`:empty('目前沒有可入庫的品項','請先確認庫存品項設定。')}</section><section aria-label="${label}最近入庫紀錄"><div class="section-heading"><h2>${label}最近3天入庫紀錄</h2><a href="#history" class="text-link">完整紀錄 ↗</a></div><div class="panel" data-recent-arrivals><p class="subtle">最近72小時，共 ${arrivals.length} 筆</p>${arrivals.length?arrivals.map(event=>{
       const item=supplyById(event.supplyId);
       return `<article class="order-card"><div class="order-card-top"><div><h3>${h(supplyLabel(item))}</h3><span class="cell-note">${formatDate(event.createdAt,true)} · ${h(event.recorder)}</span></div><span class="pill pill-ok">＋${event.quantity} ${h(item.unit)}</span></div>${food?`<p>保存期限：${h(event.expiresOn||'未登記')}</p>`:''}${event.note?`<p>${h(event.note)}</p>`:''}</article>`;
     }).join(''):empty('最近3天沒有入庫紀錄','較早的入庫可到異動紀錄查看。')}</div></section></div>`;
@@ -614,7 +614,7 @@ function renderWishes() {
 
 function renderHistory() {
   const events = stockEvents().sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
-  main.innerHTML = heading('EVERY LITTLE CHANGE', '每一次補給，都有跡可循', '保留飲料、零食、泡麵與碳粉的實際盤點及入庫紀錄。', button('↓ 匯出紀錄', 'export-history', '', 'button-outline')) +
+  main.innerHTML = heading('EVERY LITTLE CHANGE', '每一次補給，都有跡可循', '保留飲料、零食、冰品、泡麵與碳粉的實際盤點及入庫紀錄。', button('↓ 匯出紀錄', 'export-history', '', 'button-outline')) +
     `<div class="panel">${events.length ? `<div class="table-scroll"><table><thead><tr><th>時間</th><th>品項</th><th>異動</th><th>數量</th><th>登記人</th><th>備註</th></tr></thead><tbody>${events.slice(0, 200).map((event) => {
       const drink = eventItem(event);
       const type = event.type === 'count' ? '盤點' : event.type==='expiry-close'?'批次用完':event.type==='expiry-set'?'效期補登':'入庫';
@@ -648,7 +648,7 @@ function adminEmptyStockList(items) {
 function renderAdminActivity(summary) {
   const target=$('#admin-activity');if(!target)return;
   const rows=summary.recentArrivals||[],groups=summary.inventoryTotals||[];
-  const totals=summary.inventoryTotalsVersion===1?`<div class="count-activity-grid">${['drink','snack','noodle','toner'].map(kind=>{
+  const totals=summary.inventoryTotalsVersion===1?`<div class="count-activity-grid">${['drink','snack','frozen','noodle','toner'].map(kind=>{
     const group=groups.find(group=>group.kind===kind),items=group?.items||[],units={};
     for(const item of items)units[item.unit]=(units[item.unit]||0)+item.stock;
     const quantities=Object.entries(units).map(([unit,amount])=>`${amount} ${h(unit)}`).join(' · ');
@@ -663,7 +663,7 @@ async function loadAdminSummary({force=false}={}){
     if(view!=='admin')return;
     const status=$('#admin-data-status');if(status)status.textContent=(summary.snapshotAt?'資料讀取：'+formatDate(summary.snapshotAt,true):'')+(updating?' · 更新中…':'');
     const restockItems=summary.restockItems||summary.manualSnackItems||[];
-    const lowItems=summary.lowItems.filter(item=>!['snack','noodle'].includes(item.kind)||item.mode==='consider');
+    const lowItems=summary.lowItems.filter(item=>!['snack','frozen','noodle'].includes(item.kind)||item.mode==='consider');
     updateAdminDisclosure('admin-restock',`${restockItems.length} 種`,restockItems.length?adminStockList(restockItems):'<p class="subtle">目前沒有勾選需要補貨的品項。</p>');
     updateAdminDisclosure('admin-low-stock',`${lowItems.length} 種`,lowItems.length?adminStockList(lowItems):'<p class="subtle">目前沒有庫存量少的品項。</p>');
     adminZeroItems=[];
@@ -673,7 +673,7 @@ async function loadAdminSummary({force=false}={}){
   try{
     const items=[...store.data.drinks.map(item=>({...item,kind:'drink'})),...supplyItems()];
     const modes=item=>({...item,mode:preferenceMode(item.kind,item.id),zeroStockPending:(store.restockPreferences||[]).some(entry=>entry.kind===item.kind&&entry.itemId===item.id&&entry.zeroStockPending===true)});
-    const summary=store.mode==='google'?await store.readAdminSummary({force}):{activityVersion:1,inventoryTotalsVersion:1,inventoryTotals:inventoryTotals(items),...inventoryActivity(store.data.drinks,supplyItems(),store.data.events,store.supplyEvents||[]),restockItems:sortedStock(items.filter(item=>needsRestock(item,item.kind))).map(modes),lowItems:sortedStock(items.filter(item=>item.active!==false&&matchesInventoryStockFilter(item,'low',store.restockPreferences||[]))).map(modes),outOfStockItems:items.filter(item=>(item.active!==false||['snack','noodle'].includes(item.kind))&&isOutOfStockItem(item)).map(modes)};
+    const summary=store.mode==='google'?await store.readAdminSummary({force}):{activityVersion:1,inventoryTotalsVersion:1,inventoryTotals:inventoryTotals(items),...inventoryActivity(store.data.drinks,supplyItems(),store.data.events,store.supplyEvents||[]),restockItems:sortedStock(items.filter(item=>needsRestock(item,item.kind))).map(modes),lowItems:sortedStock(items.filter(item=>item.active!==false&&matchesInventoryStockFilter(item,'low',store.restockPreferences||[]))).map(modes),outOfStockItems:items.filter(item=>(item.active!==false||['snack','frozen','noodle'].includes(item.kind))&&isOutOfStockItem(item)).map(modes)};
     paint(summary);
     // Only administration visits warm inventory, and only in this tab's memory.
     if(store.mode==='google')setTimeout(()=>{if(view==='admin'&&!busy&&!document.hidden)store.prefetchWarehouse().catch(()=>{});},200);
@@ -684,7 +684,7 @@ async function loadAdminSummary({force=false}={}){
   finally{adminSummaryLoading=false;}
 }
 function renderAdmin(){
-  main.innerHTML=heading('PANTRY MANAGEMENT','今天的補給紀錄','先看看最近到貨與各類盤點。入庫、盤點及庫存管理可由功能列進入。')+`<p id="admin-data-status" class="subtle" role="status">正在讀取最新資料…</p>${adminDisclosure('admin-restock','準備補貨','已勾選需要補貨的飲料、零食、泡麵與碳粉')}${adminDisclosure('admin-low-stock','庫存量少','飲料 10包/瓶/罐以下 · 零食與泡麵評估餘量少且已勾補貨 · 碳粉無剩餘庫存時，會列在這裡')}<div id="admin-activity" class="admin-activity"><p class="subtle">正在整理近期紀錄…</p></div>`;
+  main.innerHTML=heading('PANTRY MANAGEMENT','今天的補給紀錄','先看看最近到貨與各類盤點。入庫、盤點及庫存管理可由功能列進入。')+`<p id="admin-data-status" class="subtle" role="status">正在讀取最新資料…</p>${adminDisclosure('admin-restock','準備補貨','已勾選需要補貨的飲料、零食、冰品、泡麵與碳粉')}${adminDisclosure('admin-low-stock','庫存量少','飲料 10包/瓶/罐以下 · 零食、冰品與泡麵評估餘量少且已勾補貨 · 碳粉無剩餘庫存時，會列在這裡')}<div id="admin-activity" class="admin-activity"><p class="subtle">正在整理近期紀錄…</p></div>`;
   loadAdminSummary();
 }
 
@@ -932,7 +932,7 @@ async function submitForm(form) {
     const quantity=number(values.get(newKind==='drink'?'loose':'quantity'));
     if(!name||name.length>80)throw new Error('請填寫新品名稱，最多 80 字。');
     if(!recorder||recorder.length>80)throw new Error('請填寫登記人，最多 80 字。');
-    if(!(newKind==='drink'?['包','瓶','罐']:newKind==='snack'?SNACK_UNITS:['杯','碗']).includes(unit)||quantity<1||quantity>999999)throw new Error('請選擇新品單位並填寫 1 到 999999 的整數數量。');
+    if(!(newKind==='drink'?['包','瓶','罐']:supplyUnits(newKind)).includes(unit)||quantity<1||quantity>999999)throw new Error('請選擇新品單位並填寫 1 到 999999 的整數數量。');
     const expiresOn=supplyNeedsExpiry(newKind)?String(values.get('expiresOn')||''):null;
     const snackCategory=newKind==='snack'?String(values.get('newCategory')||''):null;
     if(newKind==='snack'&&(!store.supportsSnackNoExpiry||!SNACK_CATEGORIES.includes(snackCategory)))throw new Error('請選擇零食分類，並確認已更新零食功能。');
@@ -940,7 +940,7 @@ async function submitForm(form) {
     const drinkCategory = newKind === 'drink' ? String(values.get('newCategory') || '') : null;
     if (newKind === 'drink' && !categories.includes(drinkCategory)) throw new Error('請選擇飲料分類。');
     await store.submitNewArrival({kind:newKind,name,unit,quantity,recorder,expiresOn,...(newKind==='drink'?{category:drinkCategory}:{}),...(newKind==='snack'?{category:snackCategory,flavor:String(values.get('newFlavor')||'').trim()}:{}),note:String(values.get('note')||'').trim()});
-    render();googleWriteToast(`已新增「${name}」並記錄入庫 ${quantity} ${unit}。`);return;
+    render();dirty=false;googleWriteToast(`已新增「${name}」並記錄入庫 ${quantity} ${unit}。`);return;
   }
   if (form.id === 'restock-form') {
     const drink=drinkById(values.get('drinkId'));
@@ -970,7 +970,7 @@ async function submitForm(form) {
       await store.submitSupplyStocktake(entries,recorder);message=`已保存 ${entries.length} 個品項的實際盤點。`;
     }
     if(modal.contains(form)){modalDirty=false;modal.close();}
-    render();googleWriteToast(message);return;
+    render();dirty=false;googleWriteToast(message);return;
   }
   if (form.id === 'login-form') {
     await store.login(values.get('email').trim(), values.get('password'));
@@ -1134,7 +1134,7 @@ async function runAction(action, id) {
     catch(error){store.adminSummaryReadAt=-Infinity;await loadAdminSummary();throw error;}
     await loadAdminSummary();toast(decision==='archive'?'已移至歷史品項，原紀錄已保留。':decision==='pending'?'已加入待補貨。':'已取消待補貨。');return;
   }
-  if(action==='count-kind'){if(['drink','snack','noodle','toner'].includes(id)){if(dirty)throw new Error('請先儲存目前盤點，或重新整理後再切換分類。');countKind=id;renderCount();}return;}
+  if(action==='count-kind'){if(['drink','snack','frozen','noodle','toner'].includes(id)){if(dirty)throw new Error('請先儲存目前盤點，或重新整理後再切換分類。');countKind=id;renderCount();}return;}
   if(action==='batch-arrival'){openBatchArrival();return;}
   if(action==='batch-add'){appendBatchRow($('#batch-arrival-form'),$('#batch-arrival-form .batch-row:last-child [data-batch-kind]')?.value||'snack');modalDirty=true;return;}
   if(action==='batch-remove'){const row=document.getElementById(id);if(row&&row.parentElement.children.length>1){row.remove();modalDirty=true;}else throw new Error('請保留至少一列。');return;}
@@ -1153,7 +1153,7 @@ async function runAction(action, id) {
     }
     modalDirty=true;inputSequence++;updateExpiryEditorSummary();return;
   }
-  if(action==='open-empty-stock'){warehouseKind=['drink','snack','noodle'].includes(id)?id:'drink';filter='archived';supplyFilter='archived';warehouseArchiveShortcut=view!=='products';query='';supplyQuery='';category='';supplyCategory='';supplyProduct='';if(view==='products')renderWarehouse();else{location.hash='products';}return;}
+  if(action==='open-empty-stock'){warehouseKind=['drink','snack','frozen','noodle'].includes(id)?id:'drink';filter='archived';supplyFilter='archived';warehouseArchiveShortcut=view!=='products';query='';supplyQuery='';category='';supplyCategory='';supplyProduct='';if(view==='products')renderWarehouse();else{location.hash='products';}return;}
   if(action==='open-snack-stock'){warehouseKind='snack';supplyQuery='';supplyFilter='all';supplyCategory='';supplyProduct='';location.hash='products';return;}
   if(action==='snack-new'){
     const form=$('#supply-restock-form');if(!form||form.dataset.kind!=='snack'||!store.supportsSnackNoExpiry||!store.supportsNewArrivals)throw new Error('請先更新 Google 部署，啟用零食入庫。');
@@ -1164,7 +1164,7 @@ async function runAction(action, id) {
     dirty=true;inputSequence++;updateSupplyArrivalSummary(form);updateSnackSelection(form);form.elements.newName.focus();return;
   }
   if(action==='warehouse-kind'){
-    if(view!=='products'||!['drink','snack','noodle','toner'].includes(id))return;
+    if(view!=='products'||!['drink','snack','frozen','noodle','toner'].includes(id))return;
     warehouseKind=id;supplyQuery='';supplyFilter='all';supplyCategory='';supplyProduct='';renderWarehouse();return;
   }
   if(['supply-arrival','supply-count','supply-count-kind','supply-expiry-close'].includes(action)){openSupplyForm(action,id);return;}
