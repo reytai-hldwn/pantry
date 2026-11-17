@@ -1,4 +1,5 @@
 import { drinkAvailability } from './drink-availability.js';
+import { coffeeReceiptInput, coffeeInventory, coffeeKey, coffeeToday } from './coffee.js';
 import { applyInitialStocktake, blankData, safeUrl, uid } from './domain.js';
 import { CATEGORIES_ORDER, DEFAULT_CASE_SIZE, createCompanyData, prepareCompanyCatalog } from './catalog.js';
 import { initialSupplies, prepareSupplyCatalog, supplyAvailability, canonicalSnackCategory, SNACK_CATEGORIES, SNACK_UNITS, supplyUnits, supplyBatches, supplyNeedsExpiry, supplySupportsExpiryHistory, supplyToday, validSupplyExpiry } from './supplies.js';
@@ -45,6 +46,22 @@ export class InventoryStore {
   }
 
   get canEdit() { return this.isEditor && !this.preview; }
+  get supportsCoffee() { return this.mode === 'demo'; }
+  get coffeeReceipts() { return this.data.coffeeReceipts || []; }
+
+  async saveCoffeeEntry(data, count = false) {
+    if (!this.supportsCoffee || !this.canEdit) throw new Error('請從管理入口登記咖啡豆。');
+    const input = coffeeReceiptInput(data, { count });
+    const item = coffeeInventory(this.coffeeReceipts).find(item=>coffeeKey(item)===coffeeKey(input));
+    if(count&&!item)throw new Error('找不到可盤點的咖啡豆品項。');
+    if(!count&&(item?.stock||0)+input.bags>999999)throw new Error('咖啡豆累計庫存不可超過 999999 包。');
+    const createdAt = new Date().toISOString();
+    const receipt = { ...input, id: uid(), createdAt, receivedOn: coffeeToday(createdAt), type: count ? 'count' : 'restock' };
+    await this.save({ ...structuredClone(this.data), coffeeReceipts: [...this.coffeeReceipts, receipt] });
+    return receipt;
+  }
+  async submitCoffeeReceipt(data) { return this.saveCoffeeEntry(data); }
+  async submitCoffeeStocktake(data) { return this.saveCoffeeEntry(data, true); }
   get canManage() { return this.mode === 'demo' || this.canEdit; }
   get supportsArchiveWishes() { return this.mode === 'demo'; }
   get supportsFrozen() { return this.mode === 'demo'; }
@@ -311,6 +328,7 @@ export class InventoryStore {
     const staged=new InventoryStore();staged.data=structuredClone(this.data);staged.save=async data=>{staged.data={...data,drinks:recordedBalances(data.drinks,data.events,'drinkId').map(drinkAvailability),supplies:recordedBalances(data.supplies||[],data.supplyEvents||[],'supplyId').map(supplyAvailability)};};
     const items=[];
     for(const entry of entries){
+      if(entry.kind==='coffee'){items.push(await staged.submitCoffeeReceipt({...entry,recorder}));continue;}
       if(!['drink','snack','frozen','noodle','toner'].includes(entry.kind))throw new Error('請選擇有效的分類。');
       if(entry.isNew){items.push(await staged.submitNewArrival({...entry,recorder}));continue;}
       if(entry.kind==='drink'){

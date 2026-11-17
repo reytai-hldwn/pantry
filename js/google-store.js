@@ -1,4 +1,5 @@
 import { drinkAvailability } from './drink-availability.js';
+import { coffeeReceiptInput, normalizeCoffeeReceipts } from './coffee.js';
 import { CATEGORIES_ORDER, canonicalDrinkCategory, canonicalDrinkPackaging } from './catalog.js';
 import { blankData, getWeeklyPopularity, safeUrl } from './domain.js';
 import { submitGoogleWebsiteCommand } from './google-write.js';
@@ -258,6 +259,8 @@ export function normalizeGooglePublicData(payload, { warehouse = false } = {}) {
   const updatedAt = typeof payload.updatedAt === 'string' && Number.isFinite(Date.parse(payload.updatedAt)) ? payload.updatedAt : null;
   return {
     data: { drinks, events, wishes, lastInventoryAt: warehouse ? googleDateField(payload.lastInventoryAt, '最近完整盤點', true) : null },
+    coffeeEntryVersion: warehouse && [1,2].includes(payload.coffeeEntry?.version) ? payload.coffeeEntry.version : 0,
+    coffeeReceipts: warehouse && [1,2].includes(payload.coffeeEntry?.version) ? normalizeCoffeeReceipts(payload.coffeeReceipts) : [],
     formUrls,
     voteForm,
     wishForm,
@@ -367,6 +370,8 @@ export class GoogleInventoryStore {
     this.popularityRequest = null;
     this.popularityGeneration = 0;
     this.supplies = [];
+    this.coffeeEntryVersion = 0;
+    this.coffeeReceipts = [];
     this.supplyEvents = [];
     this.supplyEntryVersion = 0;
     this.supplySnackVersion = 0;
@@ -508,6 +513,8 @@ export class GoogleInventoryStore {
   }
 
   applyGoogleView(result, warehouse) {
+    this.coffeeEntryVersion = result.coffeeEntryVersion || 0;
+    this.coffeeReceipts = result.coffeeReceipts || [];
     let observationsChanged=false;
     if(warehouse){
       const signature=JSON.stringify([result.data.drinks.map(({id,name,unit,active})=>({id,name,unit,active})),result.data.events]);
@@ -549,7 +556,19 @@ export class GoogleInventoryStore {
     this.supplyExpirySetVersion = result.supplyExpirySetVersion || 0;
     this.restockPreferences = result.restockPreferences || [];
     this.restockPreferenceVersion = result.restockPreferenceVersion || 0;
-    this.revision = JSON.stringify({ data: result.data, formUrls: result.formUrls, voteForm: result.voteForm, wishForm: result.wishForm, adminUrl: result.adminUrl, websiteEntryVersion: result.websiteEntryVersion, gachaVersion:this.gachaVersion, newArrivalVersion:this.newArrivalVersion,drinkCategoryVersion:this.drinkCategoryVersion,batchArrivalVersion:this.batchArrivalVersion,archivedArrivalVersion:this.archivedArrivalVersion,snackFlavorVersion:this.snackFlavorVersion,manualAllVersion:this.manualAllVersion,archivedRestockVersion:this.archivedRestockVersion, supplies:this.supplies,supplyEvents:this.supplyEvents,supplyEntryVersion:this.supplyEntryVersion,supplySnackVersion:this.supplySnackVersion,supplyFrozenVersion:this.supplyFrozenVersion,supplySnackPolicyVersion:this.supplySnackPolicyVersion,snackManualVersion:this.snackManualVersion,supplyExpiryVersion:this.supplyExpiryVersion,supplyExpirySetVersion:this.supplyExpirySetVersion,restockPreferences:this.restockPreferences,restockPreferenceVersion:this.restockPreferenceVersion });
+    this.revision = JSON.stringify({ data: result.data, formUrls: result.formUrls, voteForm: result.voteForm, wishForm: result.wishForm, adminUrl: result.adminUrl, websiteEntryVersion: result.websiteEntryVersion, gachaVersion:this.gachaVersion, newArrivalVersion:this.newArrivalVersion,drinkCategoryVersion:this.drinkCategoryVersion,batchArrivalVersion:this.batchArrivalVersion,archivedArrivalVersion:this.archivedArrivalVersion,snackFlavorVersion:this.snackFlavorVersion,manualAllVersion:this.manualAllVersion,archivedRestockVersion:this.archivedRestockVersion, supplies:this.supplies,supplyEvents:this.supplyEvents,supplyEntryVersion:this.supplyEntryVersion,supplySnackVersion:this.supplySnackVersion,supplyFrozenVersion:this.supplyFrozenVersion,supplySnackPolicyVersion:this.supplySnackPolicyVersion,snackManualVersion:this.snackManualVersion,supplyExpiryVersion:this.supplyExpiryVersion,supplyExpirySetVersion:this.supplyExpirySetVersion,restockPreferences:this.restockPreferences,restockPreferenceVersion:this.restockPreferenceVersion, coffeeReceipts:this.coffeeReceipts, coffeeEntryVersion:this.coffeeEntryVersion });
+  }
+
+  get supportsCoffee() { return this.supportsWebsiteEntry && this.coffeeEntryVersion === 2; }
+
+  async submitCoffeeReceipt(data) {
+    if (!this.supportsCoffee || !this.canManage) throw new Error('請先更新原 Apps Script 部署，啟用咖啡豆共用入庫。');
+    return this.sendWebsiteCommand('coffee-receipt', coffeeReceiptInput(data));
+  }
+
+  async submitCoffeeStocktake(data) {
+    if (!this.supportsCoffee || !this.canManage) throw new Error('請先更新原 Apps Script 部署，啟用咖啡豆盤點。');
+    return this.sendWebsiteCommand('coffee-stocktake', coffeeReceiptInput(data, {count:true}));
   }
 
   applyWishReceipt(operation, data, result, requestId) {
@@ -889,6 +908,7 @@ export class GoogleInventoryStore {
   }
 
   async submitBatchArrival(data) {
+    if(data.entries?.some(entry=>entry.kind==='coffee')&&!this.supportsCoffee)throw new Error('請先更新原 Apps Script 部署，啟用咖啡豆批次入庫。');
     if(data.entries?.some(entry=>entry.kind==='frozen')&&!this.supportsFrozen)throw new Error('請先更新 Apps Script 部署，啟用冰品批次入庫。');
     const newDrinks = data.entries?.filter(entry => entry.isNew && entry.kind === 'drink') || [];
     if (newDrinks.some(entry => !CATEGORIES_ORDER.includes(entry.category))) throw new Error('請選擇每款新品飲料的分類。');

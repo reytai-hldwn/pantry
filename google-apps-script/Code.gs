@@ -295,7 +295,7 @@ var INITIAL_CATALOG = /* GENERATED_CATALOG_START */ [
     "active": false
   }
 ] /* GENERATED_CATALOG_END */;
-var SHEETS = { catalog: 'Catalog', warehouse: 'Warehouse', archive: 'Archive', history: 'History', wishes: 'WishReview', votes: 'WishVotes', products: 'ProductIntake', setup: 'Setup', website: 'WebsiteRequests', supplyCatalog: 'SupplyCatalog', supplyHistory: 'SupplyHistory', supplyWarehouse: 'SupplyWarehouse', restockPreferences: 'RestockPreferences', recorderCorrections:'HistoryRecorderCorrections' };
+var SHEETS = { coffee: 'CoffeeReceipts', catalog: 'Catalog', warehouse: 'Warehouse', archive: 'Archive', history: 'History', wishes: 'WishReview', votes: 'WishVotes', products: 'ProductIntake', setup: 'Setup', website: 'WebsiteRequests', supplyCatalog: 'SupplyCatalog', supplyHistory: 'SupplyHistory', supplyWarehouse: 'SupplyWarehouse', restockPreferences: 'RestockPreferences', recorderCorrections:'HistoryRecorderCorrections' };
 var RESTOCK_PREFERENCE_HEADERS = ['事件 ID','Google 收件時間','分類','品項 ID','補貨狀態','操作來源','採計狀態'];
 var FROZEN_UNITS = ['支','杯','盒','包','個','桶'];
 function supplyUnits_(kind) { return kind==='frozen'?FROZEN_UNITS:kind==='snack'?SNACK_UNITS:kind==='noodle'?['杯','碗']:kind==='toner'?['盒']:[]; }
@@ -318,6 +318,7 @@ var INITIAL_SUPPLIES = [
   { id: 'supply-toner-red', name: '紅色碳粉', kind: 'toner', unit: '盒', active: true },
   { id: 'supply-toner-blue', name: '藍色碳粉', kind: 'toner', unit: '盒', active: true }
 ];
+var COFFEE_RECEIPT_HEADERS = ['收貨 ID', '登記時間', '收貨日期', '品牌', '每包重量（磅）', '包數', '登記人', '類型'];
 var SUPPLY_CATALOG_HEADERS = ['id', 'name', 'kind', 'unit', 'active', 'category','flavor'];
 var SUPPLY_HISTORY_HEADERS = ['事件 ID', 'Google 收件時間', '類型', '品項 ID', '品項名稱', '數量', '備註', '登記人', '採計狀態', '保存期限', '批次／效期核對 ID'];
 var WEBSITE_REQUEST_HEADERS = ['請求代號', '收件時間', '操作', '資料指紋', '處理狀態', '結果', '處理內容 1', '處理內容 2', '處理內容 3', '處理內容 4', '處理內容 5', '處理內容 6', '處理內容 7', '處理內容 8'];
@@ -442,7 +443,7 @@ function handleFormSubmit(e) {
 function handleSheetEdit(e) {
   if (!e || !e.range) return;
   var name = e.range.getSheet().getName();
-  if ([SHEETS.catalog,SHEETS.history,SHEETS.wishes,SHEETS.votes,SHEETS.supplyCatalog,SHEETS.supplyHistory,SHEETS.restockPreferences,SHEETS.recorderCorrections].indexOf(name)>=0) invalidateInventoryReadCache_();
+  if ([SHEETS.coffee,SHEETS.catalog,SHEETS.history,SHEETS.wishes,SHEETS.votes,SHEETS.supplyCatalog,SHEETS.supplyHistory,SHEETS.restockPreferences,SHEETS.recorderCorrections].indexOf(name)>=0) invalidateInventoryReadCache_();
   if (name === SHEETS.catalog) syncCatalogForms();
   else if (name === SHEETS.history) refreshWarehouse();
   else if (name === SHEETS.wishes) PropertiesService.getScriptProperties().setProperty('HOLDWIN_PUBLIC_UPDATED_AT', new Date().toISOString());
@@ -612,6 +613,8 @@ function submitWebsiteRequest_(request) {
       var inventory=computeInventory_(catalog_(ss),historyEvents_(ss));
       renderWarehouse_(ss,inventory);renderArchive_(ss,inventory);
       PropertiesService.getScriptProperties().setProperty('HOLDWIN_PUBLIC_UPDATED_AT',new Date().toISOString());
+    } else if (effects.coffeeRows) {
+      // Coffee receipts are independent of drink and supply stock.
     } else if (effects.recorderCorrections) {
       // Recorder corrections have no stock or generated inventory changes.
     } else if (effects.batch) {
@@ -705,13 +708,21 @@ function prepareWebsiteRequest_(ss, request, stamp) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) throw websiteInputError_('送出資料格式不正確。');
   var operation = request.operation, effects = { operation: operation, result: { operation: operation } };
   if(restockProtectedOperation_(operation)&&validateRestockAuth_(data))effects.result.restockAuthVersion=1;
-  var catalog = ['wish', 'vote','batch-arrival','snack-catalog-batch'].indexOf(operation) >= 0 || String(operation).indexOf('supply-') === 0 || (operation==='restock-preference'&&data.kind!=='drink') ? [] : catalog_(ss);
+  var catalog = ['coffee-stocktake','coffee-receipt','wish', 'vote','batch-arrival','snack-catalog-batch'].indexOf(operation) >= 0 || String(operation).indexOf('supply-') === 0 || (operation==='restock-preference'&&data.kind!=='drink') ? [] : catalog_(ss);
   function activeDrink(id,restore) {
     var found = catalog.filter(function(drink){return drink.id===id&&(drink.active||restore===true);})[0];
     if (!found) throw websiteInputError_('這個品項目前不在供應清單，請重新讀取品項。');
     return found;
   }
-  if(operation==='snack-catalog-batch'){
+  if (operation === 'coffee-receipt' || operation === 'coffee-stocktake') {
+    var count = operation === 'coffee-stocktake', receipt = validateCoffeeReceipt_(data, stamp, count);
+    var current = coffeeInventory_(coffeeReceipts_(ss)).filter(function(item){return coffeePackageKey_(item)===coffeePackageKey_(receipt);})[0];
+    if(count&&!current)throw websiteInputError_('找不到可盤點的咖啡豆品項。');
+    if(!count&&(current?current.stock:0)+receipt.bags>999999)throw websiteInputError_('咖啡豆累計庫存不可超過 999999 包。');
+    receipt.id = 'coffee-web-' + request.requestId; receipt.createdAt = stamp; receipt.type = count ? 'count' : 'restock';
+    effects.coffeeRows = [[receipt.id, stamp, receipt.receivedOn, sheetText_(receipt.brand), receipt.poundsPerBag, receipt.bags, sheetText_(receipt.recorder), receipt.type]];
+    effects.result.receipt = receipt;
+  } else if(operation==='snack-catalog-batch'){
     effects.snackCatalogBatch=prepareSnackCatalogBatch_(ss,data);
     effects.result.ids=effects.snackCatalogBatch.changes.map(function(change){return change.id;});
     effects.result.created=effects.snackCatalogBatch.created;effects.result.updated=effects.snackCatalogBatch.updated;effects.result.unchanged=effects.snackCatalogBatch.unchanged;effects.result.count=effects.snackCatalogBatch.changes.length;
@@ -720,7 +731,14 @@ function prepareWebsiteRequest_(ss, request, stamp) {
     if (!Array.isArray(data.entries) || !data.entries.length || data.entries.length > 30) throw websiteInputError_('請填寫 1 到 30 列入庫品項。');
     var snapshot = arrivalReadSnapshot_(ss), newKeys = Object.create(null), totals = Object.create(null);
     effects.batch = data.entries.map(function(entry,index) {
-      if (!entry || ['drink','snack','frozen','noodle','toner'].indexOf(entry.kind) < 0) throw websiteInputError_('請選擇有效的入庫分類。');
+      if (!entry || ['drink','snack','coffee','frozen','noodle','toner'].indexOf(entry.kind) < 0) throw websiteInputError_('請選擇有效的入庫分類。');
+      if(entry.kind==='coffee'){
+        var coffeeChild=prepareWebsiteRequest_(snapshot,{operation:'coffee-receipt',data:Object.assign({},entry,{recorder:recorder}),requestId:request.requestId+'-'+index},stamp);
+        var coffeeKey='coffee:'+coffeePackageKey_(entry),coffeeCurrent=coffeeInventory_(coffeeReceipts_(snapshot)).filter(function(item){return coffeePackageKey_(item)===coffeePackageKey_(entry);})[0];
+        totals[coffeeKey]=(totals[coffeeKey]||0)+entry.bags;
+        if((coffeeCurrent?coffeeCurrent.stock:0)+totals[coffeeKey]>999999)throw websiteInputError_('咖啡豆批次累計庫存不可超過 999999 包。');
+        coffeeChild.result.kind='coffee';return coffeeChild;
+      }
       if(!entry.isNew){var existing=entry.kind==='drink'?catalog_(snapshot).filter(function(item){return item.id===entry.drinkId;})[0]:supplyCatalog_(snapshot).filter(function(item){return item.id===entry.supplyId;})[0];if(!existing||(entry.kind!=='drink'&&existing.kind!==entry.kind))throw websiteInputError_('品項與入庫分類不符。');}
       var rowData = Object.assign({},entry,{recorder:recorder});
       var op = entry.isNew ? 'new-arrival' : entry.kind === 'drink' ? 'arrival' : 'supply-arrival';
@@ -969,6 +987,12 @@ function websiteAppendMissing_(sheet, rows) {
 }
 
 function applyWebsiteRequest_(ss, effects) {
+  if (effects.coffeeRows) {
+    var coffeeSheet = coffeeReceiptSheet_(ss, true);
+    coffeeSheet.getRange(coffeeSheet.getLastRow() + 1, 1, effects.coffeeRows.length, COFFEE_RECEIPT_HEADERS.length).setNumberFormat('@');
+    websiteAppendMissing_(coffeeSheet, effects.coffeeRows);
+    return;
+  }
   var snapshotAt = new Date().toISOString();
   var fulfilments=effects.batch?effects.batch.reduce(function(rows,child){return rows.concat(child.restockFulfilments||[]);},[]):effects.restockFulfilments||[];
   var preferenceSheet=ss.getSheetByName(SHEETS.restockPreferences);
@@ -990,6 +1014,8 @@ function applyWebsiteRequest_(ss, effects) {
     effects.batch.forEach(function(child){if(child.newArrival){var row=child.supplyCatalog||child.catalog,items=child.supplyCatalog?supplies.filter(function(item){return item.kind===row[2];}):drinks;
       if(items.some(function(item){return item.id!==row[0]&&supplyProductKey_(item.name,item.flavor)===child.newArrivalNameKey;}))throw websiteInputError_('同名品項已建立，請重新整理後沿用原品項。');}});
     var collect=function(key){return effects.batch.reduce(function(rows,child){return rows.concat(child[key]||[]);},[]);};
+    var coffeeRows=collect('coffeeRows');
+    if(coffeeRows.length){var coffeeSheet=coffeeReceiptSheet_(ss,true);coffeeSheet.getRange(coffeeSheet.getLastRow()+1,1,coffeeRows.length,COFFEE_RECEIPT_HEADERS.length).setNumberFormat('@');websiteAppendMissing_(coffeeSheet,coffeeRows);}
     var supplyRows=effects.batch.filter(function(child){return child.supplyCatalog;}).map(function(child){return child.supplyCatalog;});
     if(effects.batch.some(function(child){return child.supplyHistory;}))ensureSupplyStorage_(ss);
     websiteAppendMissing_(ss.getSheetByName(SHEETS.supplyCatalog),supplyRows);
@@ -1303,6 +1329,46 @@ function websiteWeeklyPopularity_(drinks, events, now = new Date()) {
   return { rows: rows.slice(0, 3), countedProducts, observedProducts, workweekDays: 5, windowDays:30, windowStartAt:new Date(since).toISOString(), windowEndAt:new Date(until).toISOString(), calculatedAt: new Date(now).toISOString() };
 }
 
+function validateCoffeeReceipt_(data, stamp, count) {
+  var brand = websiteText_(data.brand, '咖啡豆品牌', 80, true);
+  var recorder = websiteText_(data.recorder, '登記人', 80, true);
+  if (/[\u0000-\u001f\u007f]/.test(data.brand + data.recorder)) throw websiteInputError_('品牌與登記人格式不正確。');
+  if (typeof data.poundsPerBag !== 'number' || !Number.isSafeInteger(data.poundsPerBag * 2) || data.poundsPerBag < 0.5 || data.poundsPerBag > 9999) throw websiteInputError_('每包重量須為 0.5 到 9999 磅，以半磅（0.5 磅）為單位。');
+  if (!Number.isSafeInteger(data.bags) || data.bags < (count?0:1) || data.bags > (count?999999:9999)) throw websiteInputError_('請填寫有效的整數包數。');
+  return { brand: brand, recorder: recorder, receivedOn: supplyToday_(stamp), poundsPerBag: data.poundsPerBag, bags: data.bags };
+}
+
+function coffeePackageKey_(item) { return item.brand.trim().normalize('NFKC').toLowerCase()+'\u0000'+item.poundsPerBag; }
+function coffeeInventory_(rows) {
+  var groups = Object.create(null);
+  rows.map(function(row,index){return {row:row,index:index};}).sort(function(a,b){return Date.parse(a.row.createdAt)-Date.parse(b.row.createdAt)||a.index-b.index;}).forEach(function(entry){
+    var row=entry.row,key=coffeePackageKey_(row),item=groups[key]||{brand:row.brand,poundsPerBag:row.poundsPerBag,stock:0};
+    item.stock=row.type==='count'?row.bags:item.stock+row.bags;
+    if(!Number.isSafeInteger(item.stock)||item.stock<0||item.stock>999999)throw websiteInputError_('咖啡豆累計庫存不可超過 999999 包。');
+    groups[key]=item;
+  });
+  return Object.keys(groups).map(function(key){return groups[key];});
+}
+
+function coffeeReceiptSheet_(ss, create) {
+  var sheet = ss.getSheetByName(SHEETS.coffee);
+  if (sheet && sheet.getLastRow() > 0) {
+    var header = sheet.getRange(1, 1, 1, COFFEE_RECEIPT_HEADERS.length).getValues()[0];
+    if (!COFFEE_RECEIPT_HEADERS.slice(0,7).every(function (label, index) { return header[index] === label; }) || (header[7] && header[7] !== COFFEE_RECEIPT_HEADERS[7])) throw websiteInputError_('CoffeeReceipts 工作表格式不符，請先確認欄位。');
+  }
+  if(create){sheet=ensureSheet_(ss,SHEETS.coffee,COFFEE_RECEIPT_HEADERS);sheet.getRange(1,8,1,1).setValues([[COFFEE_RECEIPT_HEADERS[7]]]);}
+  return sheet;
+}
+
+function coffeeReceipts_(ss) {
+  var sheet = coffeeReceiptSheet_(ss, false);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, COFFEE_RECEIPT_HEADERS.length).getValues().map(function (row) {
+    var createdAt=iso_(row[1]);
+    return { id: String(row[0]), createdAt: createdAt, receivedOn: supplyToday_(createdAt), brand: String(row[3]), poundsPerBag: Number(row[4]), bags: Number(row[5]), recorder: String(row[6]), type: row[7] || 'restock' };
+  });
+}
+
 function warehouseData_(force) { return cachedInventoryRead_('warehouse',force,buildWarehouseData_,8); }
 
 function buildWarehouseData_() {
@@ -1324,6 +1390,8 @@ function buildWarehouseData_() {
   var active = result.drinks.filter(function (drink) { return drink.active; });
   result.lastInventoryAt = active.length && active.every(function (drink) { return drink.lastCountAt; })
     ? active.map(function (drink) { return drink.lastCountAt; }).sort()[0] : null;
+  result.coffeeEntry = { version: 2 };
+  result.coffeeReceipts = coffeeReceipts_(ss);
   result.supplyEntry = { version: 1, expiryVersion: 1, expirySetVersion: 1, recorderCorrectionVersion: 1, snackVersion: 1, snackPolicyVersion: 2, snackFlavorVersion: 1, snackCatalogVersion: 1, frozenVersion: 1 };
   result.supplyEvents = supplyEvents_(ss);
   result.supplies = supplyInventory_(supplyCatalog_(ss), result.supplyEvents);

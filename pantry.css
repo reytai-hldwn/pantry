@@ -278,3 +278,33 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
 .ranking-period{display:grid;gap:8px;padding:18px 20px;margin:0 0 22px;background:#f7f2e9;border:1px solid var(--line);border-radius:16px;line-height:1.8}.ranking-period strong{font-size:14px}.ranking-period span{font-size:13px}.ranking-period small{font-size:11px;color:var(--muted)}
 
 .arrival-quantity-warning{padding:12px;border:1px solid #b65d36;border-radius:8px;background:#fff4e8;color:#8b3d24;line-height:1.7}
+/* Coffee receipts */
+.coffee-summary{display:grid;grid-template-columns:auto minmax(0,1fr) minmax(180px,auto);align-items:center;gap:24px;padding:25px 28px;border:1px solid #dbc3a3;border-radius:14px;background:#fbf6ee}
+.coffee-summary-mark{display:grid;place-items:center;width:64px;height:64px;border-radius:50%;background:#f0e3d1;font-size:30px}
+.coffee-summary-label{margin:0 0 8px;color:#82654b;font-size:13px}
+.coffee-summary strong{font-size:25px;font-variant-numeric:tabular-nums;color:#61442f}
+.coffee-summary .subtle{margin:8px 0 0;overflow-wrap:anywhere}
+.coffee-summary-weight{border-left:1px solid #e3d3be;padding-left:28px}
+.coffee-summary-note{margin:12px 0 24px}
+.coffee-layout>section{min-width:0}
+.coffee-receipts{padding:0 22px}
+.coffee-receipt{padding:20px 0;border-bottom:1px solid #eee2d3}
+.coffee-receipt:last-child{border-bottom:0}
+.coffee-receipt-heading{display:flex;align-items:baseline;justify-content:space-between;gap:16px}
+.coffee-receipt-heading h3{margin:0;overflow-wrap:anywhere;min-width:0}
+.coffee-receipt-heading>strong{white-space:nowrap;color:#795436;font-size:15px}
+.coffee-receipt p{margin:8px 0 0;overflow-wrap:anywhere}
+@media(max-width:600px){.coffee-summary{grid-template-columns:44px minmax(0,1fr);gap:16px;padding:20px}.coffee-summary-mark{width:44px;height:44px;font-size:24px}.coffee-summary strong{font-size:23px}.coffee-summary-weight{grid-column:1/-1;border-left:0;border-top:1px solid #e3d3be;padding:16px 0 0}.coffee-receipt-heading{gap:10px}.coffee-receipts{padding:0 18px}}
+
+@media(max-width:700px){
+  .coffee-inventory-table{display:block;min-width:0;width:100%}
+  .coffee-inventory-table thead{display:none}
+  .coffee-inventory-table tbody{display:block}
+  .coffee-inventory-table tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;padding:20px;border-bottom:1px solid #eee2d3}
+  .coffee-inventory-table tr:last-child{border-bottom:0}
+  .coffee-inventory-table td{display:block;min-width:0;padding:0;border:0;white-space:normal;overflow-wrap:anywhere}
+  .coffee-inventory-table td:first-child,.coffee-inventory-table td:last-child{grid-column:1/-1}
+  .coffee-inventory-table td:first-child{font-size:16px}
+  .coffee-inventory-table td[data-label]:before{content:attr(data-label);display:block;margin-bottom:6px;font-size:11px;color:#927b63}
+  .coffee-inventory-table .inline-actions{display:flex;flex-wrap:wrap;gap:8px}
+}
