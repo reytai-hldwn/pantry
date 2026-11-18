@@ -116,7 +116,9 @@ export function submitGoogleWebsiteCommand(endpoint, command, options = {}) {
       pageDocument.body.appendChild(frame);
       pageDocument.body.appendChild(form);
       form.submit();
-      pollTimer = schedule(poll, options.initialDelay ?? (replyToken?8000:1200));
+      // Restock marks are small writes: start fallback confirmation promptly if
+      // the sandbox message/load hint is delayed. Only a committed receipt wins.
+      pollTimer = schedule(poll, options.initialDelay ?? (replyToken&&command.operation!=='restock-preference'?8000:1200));
     } catch {
       const error = new Error('尚未確認資料是否送出，請保留原內容重試。');
       error.code = 'pending';

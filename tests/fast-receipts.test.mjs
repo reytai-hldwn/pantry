@@ -53,6 +53,22 @@ test('unsupported browser message capabilities use the original transport',async
   assert.equal(page.nodes.find(node=>node.type==='form').children.length,1);await page.run(1200);await pending;
 });
 
+test('restock fallback checks after 1.2 seconds and pending reads never confirm an uncommitted mark',async()=>{
+ const page=browser(),mark={...command,operation:'restock-preference',data:{kind:'snack',itemId:'test-snack',mode:'consider',expectedMode:'normal',recorder:'測試人'}};
+ let committed=false,resolved=false,reads=0;
+ const pending=submitGoogleWebsiteCommand(endpoint,mark,{...page,readReceipt:async()=>{reads++;return committed?{...page.receipt,result:{operation:'restock-preference',...mark.data}}:{ok:true,requestId,state:'pending'};}}).then(result=>{resolved=true;return result;});
+ assert.ok(![...page.timers.values()].some(timer=>timer.delay===8000));
+ await page.run(1200);assert.equal(reads,1);assert.equal(resolved,false);assert.equal(page.nodes.length,2);
+ committed=true;await page.run(2500);assert.equal((await pending).mode,'consider');assert.equal(reads,2);assert.equal(page.nodes.length,0);
+});
+
+test('prompt restock fallback still accepts a direct committed message without a receipt read',async()=>{
+ const page=browser(),mark={...command,operation:'restock-preference'};
+ page.receipt.result={operation:'restock-preference',kind:'snack',itemId:'test-snack',mode:'consider'};
+ const pending=submitGoogleWebsiteCommand(endpoint,mark,page);page.message();await pending;
+ assert.equal(page.reads,0);assert.equal(page.timers.size,0);assert.equal(page.nodes.length,0);
+});
+
 test('Apps Script sends only committed receipts and never stores transient message routing fields',()=>{
   const b=websiteBackend(),parameters={payload:JSON.stringify(command),replyToken:token,replyOrigin:'https://example.test'};
   const html=b.ctx.doPost({parameter:parameters}).body,script=html.match(/<script>([\s\S]*?)<\/script>/)[1],messages=[];

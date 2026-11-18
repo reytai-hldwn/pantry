@@ -52,6 +52,39 @@ test('normal checkbox writes touch one generated label and never reread historie
  }
 });
 
+test('restock writes reuse their locked preference read while keeping schema checks and one audit row per request',()=>{
+ for(const [kind,itemId] of [['drink','milk'],['snack','supply-snack-01'],['frozen','fixture-ice'],['noodle','supply-noodle-01'],['toner','supply-toner-black']]){
+  const b=websiteBackend();seededViews(b);b.sheets.SupplyCatalog.rows.push(['fixture-ice','虛構雪糕','frozen','支',true,'','']);
+  const sheet=b.sheets.RestockPreferences=memorySheet([Array.from(b.ctx.RESTOCK_PREFERENCE_HEADERS),['old','2020-01-01T00:00:00Z','drink','tea','normal','測試','採計','原登記']]);
+  let reads=0,flushes=0;const range=sheet.getRange;
+  sheet.getRange=(...args)=>{const value=range(...args),read=value.getValues;value.getValues=()=>{reads++;return read();};return value;};
+  b.ctx.SpreadsheetApp.flush=()=>{flushes++;};
+  const id=`restock-speed-${kind}-request-00001`,data={kind,itemId,mode:'consider',expectedMode:'normal'};
+  const result=b.send('restock-preference',data,id);assert.equal(result.state,'accepted');assert.equal(reads,3,'one snapshot and one pre-write schema check');assert.equal(flushes,3);assert.equal(sheet.rows.length,3);assert.equal(sheet.rows[2][7],'測試管理者');
+  assert.deepEqual(b.send('restock-preference',data,id),result);assert.equal(reads,3);assert.equal(sheet.rows.length,3);
+  b.send('restock-preference',{...data,mode:'normal',expectedMode:'consider'});assert.equal(reads,6,'each new request reads fresh state');assert.equal(sheet.rows.at(-1)[4],'normal');
+ }
+});
+
+test('preference snapshot reuse preserves direct sheet appends and rejects schema changes after preparation',()=>{
+ for(const change of ['append','schema']){
+  const b=websiteBackend();seededViews(b);b.sheets.RestockPreferences=memorySheet([Array.from(b.ctx.RESTOCK_PREFERENCE_HEADERS)]);
+  let flushes=0;b.ctx.SpreadsheetApp.flush=()=>{if(++flushes===1){if(change==='append')b.sheets.RestockPreferences.rows.push(['external','2020-01-01T00:00:00Z','drink','tea','normal','直接登記','採計','同事']);else b.sheets.RestockPreferences.rows[0][7]='私人備註';}};
+  const result=b.send('restock-preference',{kind:'drink',itemId:'milk',mode:'consider',expectedMode:'normal'});
+  if(change==='append'){assert.equal(result.state,'accepted');assert.equal(b.sheets.RestockPreferences.rows[1][0],'external');assert.equal(b.sheets.RestockPreferences.rows[2][3],'milk');}
+  else {assert.equal(result.state,'rejected');assert.equal(b.sheets.RestockPreferences.rows.length,1);assert.equal(b.sheets.RestockPreferences.rows[0][7],'私人備註');}
+ }
+});
+
+test('a recovered no-op restock intent reads the latest mark instead of confirming stale state',()=>{
+ const b=websiteBackend();seededViews(b);let flushes=0;
+ b.ctx.SpreadsheetApp.flush=()=>{if(++flushes===1)throw Error('journal interruption');};
+ const id='restock-noop-recovery-request-00001',data={kind:'drink',itemId:'milk',mode:'normal',expectedMode:'normal'};
+ assert.throws(()=>b.send('restock-preference',data,id),/journal interruption/);
+ b.ctx.SpreadsheetApp.flush=()=>{};b.send('restock-preference',{...data,mode:'consider'});
+ const result=b.send('restock-preference',data,id);assert.equal(result.state,'accepted');assert.equal(result.result.mode,'consider');assert.equal(b.sheets.RestockPreferences.rows.length,2);
+});
+
 test('summary cache expires, invalidates on writes/edits, supports fresh=1 and does not cache an obsolete generation',()=>{
  const b=websiteBackend(),cache=new Map();let now=0,builds=0,puts=0;const original=b.ctx.buildAdminSummary_;b.ctx.buildAdminSummary_=()=>{builds++;return original();};b.ctx.CacheService={getScriptCache:()=>({get:key=>{const value=cache.get(key);return value&&value.until>now?value.json:null;},put:(key,json,seconds)=>{puts++;cache.set(key,{json,until:now+seconds*1000});}})};
  b.ctx.adminSummaryData_();b.ctx.adminSummaryData_();assert.equal(builds,1);b.ctx.doGet({parameter:{action:'admin',fresh:'1'}});assert.equal(builds,2);b.send('restock-preference',{kind:'drink',itemId:'milk',mode:'consider',expectedMode:'normal'});assert.equal(b.ctx.adminSummaryData_().restockItems.length,1);assert.equal(builds,3);
