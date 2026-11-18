@@ -557,7 +557,7 @@ function websiteReceipt_(requestId) {
   var record = websiteRequestRecord_(ss.getSheetByName(SHEETS.website), requestId, 6);
   if (!record || record.row[4] === 'pending') return { ok: true, requestId: requestId, state: 'pending' };
   var result = JSON.parse(record.row[5] || '{}');
-  // No prepared rows, recorder, browser token or original payload is exposed.
+  // Only committed receipt fields are returned, never prepared rows or browser credentials.
   return record.row[4] === 'accepted'
     ? { ok: true, requestId: requestId, state: 'accepted', result: result }
     : { ok: false, requestId: requestId, state: 'rejected', message: text_(result.message || '資料未儲存，請檢查輸入。', 300), errorCode: result.errorCode==='restock_auth'?'restock_auth':'rejected' };
@@ -614,7 +614,10 @@ function submitWebsiteRequest_(request) {
       renderWarehouse_(ss,inventory);renderArchive_(ss,inventory);
       PropertiesService.getScriptProperties().setProperty('HOLDWIN_PUBLIC_UPDATED_AT',new Date().toISOString());
     } else if (effects.coffeeRows) {
-      // Coffee receipts are independent of drink and supply stock.
+      if(effects.operation==='coffee-stocktake'){
+        var key=coffeePackageKey_(effects.result.receipt);
+        effects.result.stocktake={version:1,kind:'coffee',entries:coffeeReceipts_(ss).filter(function(row){return coffeePackageKey_(row)===key;}),snapshotAt:new Date().toISOString()};
+      }
     } else if (effects.recorderCorrections) {
       // Recorder corrections have no stock or generated inventory changes.
     } else if (effects.batch) {
@@ -623,6 +626,16 @@ function submitWebsiteRequest_(request) {
     } else if (effects.supplyDetails || effects.snackCatalogBatch) { renderSupplyWarehouse_(ss);
     } else if (effects.operation==='restock-preference') {
       if(effects.restockPreference){var currentPreference=updateRestockView_(ss,effects.restockPreference);effects.result.mode=currentPreference.mode;effects.result.updatedAt=currentPreference.updatedAt;}
+    } else if (effects.operation === 'supply-stocktake') {
+      var supplyEvents=supplyEvents_(ss), supplyInventory=supplyInventory_(supplyCatalog_(ss),supplyEvents);
+      renderSupplyWarehouse_(ss,{fast:true,events:supplyEvents,inventory:supplyInventory});
+      effects.result.stocktake=stocktakeReceipt_(effects,supplyInventory,supplyEvents,'supply');
+    } else if (effects.operation === 'stocktake') {
+      var catalog=catalog_(ss),events=historyEvents_(ss),inventory=computeInventory_(catalog,events);
+      renderWarehouse_(ss,inventory,true);
+      if((effects.history||[]).some(function(row){return row[5]===0||catalog.some(function(item){return item.id===row[3]&&!item.active;});}))renderArchive_(ss,inventory);
+      PropertiesService.getScriptProperties().setProperty('HOLDWIN_PUBLIC_UPDATED_AT',new Date().toISOString());
+      effects.result.stocktake=stocktakeReceipt_(effects,inventory,events,'drink');
     } else if (effects.supplyHistory) renderSupplyWarehouse_(ss);
     else {
       var catalog = catalog_(ss), inventory = computeInventory_(catalog, historyEvents_(ss));
@@ -634,6 +647,7 @@ function submitWebsiteRequest_(request) {
     }
     // Large supporter lists use the ordinary full-read fallback rather than
     // exceeding the single-cell receipt limit after the vote was written.
+    if (JSON.stringify(effects.result).length > 40000) delete effects.result.stocktake;
     if (JSON.stringify(effects.result).length > 40000) { delete effects.result.wish; delete effects.result.snapshotAt; }
     SpreadsheetApp.flush();
     invalidateInventoryReadCache_(request.requestId);
@@ -664,15 +678,16 @@ function prepareSnackCatalogBatch_(ss,data) {
   var changes=data.entries.map(function(entry){
     if(!entry||entry.quantity!==undefined||entry.stock!==undefined)throw websiteInputError_('品項建檔不能包含盤點或入庫數量。');
     var name=websiteText_(entry.name,'品項名稱',80,true),flavor=websiteText_(entry.flavor||'','口味',80,false),category=canonicalSnackCategory_(websiteText_(entry.category,'零食分類',80,true));
-    if(SNACK_CATEGORIES.indexOf(category)<0||SNACK_UNITS.indexOf(entry.unit)<0)throw websiteInputError_('請提供有效的零食分類與單位。');
+    var unit=cornStickBulkPack_(name)?'包':entry.unit;
+    if(SNACK_CATEGORIES.indexOf(category)<0||SNACK_UNITS.indexOf(unit)<0)throw websiteInputError_('請提供有效的零食分類與單位。');
     var id=entry.supplyId||'supply-snack-'+websiteFingerprint_({operation:'snack-catalog-key',data:{key:supplyProductKey_(name,flavor)}}).slice(0,48);
     if(!/^[A-Za-z0-9_-]{1,80}$/.test(id)||seen[id])throw websiteInputError_('批次品項代號無效或重複。');seen[id]=true;
     var current=items.filter(function(item){return item.id===id;})[0],before=null;
     if(entry.supplyId){
       if(!current||current.kind!=='snack'||!entry.expected||websiteCanonical_(snackCatalogState_(current))!==websiteCanonical_(entry.expected))throw websiteInputError_('品項已更新，請重新讀取後核對再送出。');
-      if(entry.unit!==current.unit)throw websiteInputError_('既有品項單位須保留；不同包裝請另建品項。');before=snackCatalogState_(current);
+      if(unit!==current.unit)throw websiteInputError_('既有品項單位須保留；不同包裝請另建品項。');before=snackCatalogState_(current);
     }else if(current)throw websiteInputError_('這個品項已建立，請沿用原品項。');
-    var desired={id:id,name:name,flavor:flavor,category:category,unit:entry.unit,active:before?before.active:true};
+    var desired={id:id,name:name,flavor:flavor,category:category,unit:unit,active:before?before.active:true};
     if(!before)created++;else if(websiteCanonical_(before)===websiteCanonical_(desired))unchanged++;else updated++;
     return {id:id,before:before,desired:desired};
   });
@@ -813,6 +828,7 @@ function prepareWebsiteRequest_(ss, request, stamp) {
     var kind = data.kind;
     if (['drink','snack','frozen','noodle'].indexOf(kind) < 0) throw websiteInputError_('新品到貨僅支援飲料、零食、冰品與泡麵。');
     var name = websiteText_(data.name, '新品名稱', 80, true);
+    if(kind==='snack'&&cornStickBulkPack_(name))data=Object.assign({},data,{unit:'包'});
     var recorder = websiteText_(data.recorder, '登記人', 80, true);
     var note = websiteText_(data.note || '', '入庫備註', 500, false);
     var quantity = quantity_(data.quantity, false);
@@ -978,6 +994,22 @@ function prepareWebsiteRequest_(ss, request, stamp) {
   return effects;
 }
 
+function stocktakeReceipt_(effects, inventory, events, kind) {
+  var rows=kind==='drink'?effects.history:effects.supplyHistory,ids=Object.create(null),eventIds=Object.create(null);
+  rows.forEach(function(row){ids[row[3]]=true;eventIds[row[0]]=true;});
+  var items=kind==='drink'?visibleDrinkInventory_(inventory).map(function(entry){
+    var d=entry.drink;return {id:d.id,name:d.name,category:d.category,packaging:d.packaging,unit:d.unit,perCase:d.perCase,threshold:d.threshold,active:d.active,stock:entry.stock,lastCountAt:entry.lastCountAt,lastArrivalAt:entry.lastArrivalAt||null,autoArchived:d.autoArchived===true};
+  }):inventory;
+  var selected=items.filter(function(item){return ids[item.id];});
+  var selectedEvents=events.filter(function(event){return eventIds[event.id];}).map(function(event){
+    var row={id:event.id,type:event.type,quantity:event.quantity,createdAt:event.createdAt,note:event.note||'',recorder:event.recorder||publicRecorder_(event.email)};
+    if(kind==='drink')row.drinkId=event.drinkId;else{row.supplyId=event.supplyId;row.expiresOn=event.expiresOn||null;row.batchId=event.batchId||null;}return row;
+  });
+  var result={version:1,kind:kind,items:selected,events:selectedEvents,snapshotAt:new Date().toISOString()};
+  if(kind==='drink'){var active=items.filter(function(item){return item.active;});result.lastInventoryAt=active.length&&active.every(function(item){return item.lastCountAt;})?active.map(function(item){return item.lastCountAt;}).sort()[0]:null;}
+  return result;
+}
+
 function websiteAppendMissing_(sheet, rows) {
   if (!rows || !rows.length) return;
   var known = Object.create(null);
@@ -1067,7 +1099,7 @@ function applyWebsiteRequest_(ss, effects) {
     ensureSupplyStorage_(ss);
     if (effects.supplyCatalog) websiteAppendMissing_(ss.getSheetByName(SHEETS.supplyCatalog), [effects.supplyCatalog]);
     var history = ss.getSheetByName(SHEETS.supplyHistory);
-    history.getRange(1, 10, Math.max(1, history.getLastRow() + effects.supplyHistory.length), 2).setNumberFormat('@');
+    history.getRange(history.getLastRow()+1, 10, effects.supplyHistory.length, 2).setNumberFormat('@');
     websiteAppendMissing_(history, effects.supplyHistory);
   }
   if (effects.catalog) {
@@ -1356,7 +1388,10 @@ function coffeeReceiptSheet_(ss, create) {
     var header = sheet.getRange(1, 1, 1, COFFEE_RECEIPT_HEADERS.length).getValues()[0];
     if (!COFFEE_RECEIPT_HEADERS.slice(0,7).every(function (label, index) { return header[index] === label; }) || (header[7] && header[7] !== COFFEE_RECEIPT_HEADERS[7])) throw websiteInputError_('CoffeeReceipts 工作表格式不符，請先確認欄位。');
   }
-  if(create){sheet=ensureSheet_(ss,SHEETS.coffee,COFFEE_RECEIPT_HEADERS);sheet.getRange(1,8,1,1).setValues([[COFFEE_RECEIPT_HEADERS[7]]]);}
+  if(create){
+    if(!sheet||sheet.getLastRow()===0)sheet=ensureSheet_(ss,SHEETS.coffee,COFFEE_RECEIPT_HEADERS);
+    else if(!header[7])sheet.getRange(1,8,1,1).setValues([[COFFEE_RECEIPT_HEADERS[7]]]);
+  }
   return sheet;
 }
 
@@ -1455,11 +1490,13 @@ function websiteSupplyExpiry_(kind, value, stamp) {
 
 function supplyProductKey_(name,flavor) { var aliases={'多力多滋雙倍起司口味':['多力多滋','超濃起司'],'多力多滋香菜口味':['多力多滋','香菜'],'樂事海苔口味':['樂事','海苔'],'華元蚵仔煎':['華元洋芋片','蚵仔煎'],'華元辣蚵仔煎':['華元洋芋片','辣蚵仔煎']},key=productNameKey_(name);if(!flavor&&Object.prototype.hasOwnProperty.call(aliases,key)){name=aliases[key][0];flavor=aliases[key][1];}return productNameKey_(name)+'\u0000'+productNameKey_(flavor||''); }
 
+function cornStickBulkPack_(name) { return /^鴻津玉米棒(?:[（(]量販包[）)])?$/.test(text_(name,80).normalize('NFKC').replace(/\s+/g,'')); }
+
 function supplyCatalog_(ss) {
   var sheet = ss.getSheetByName(SHEETS.supplyCatalog), seen = Object.create(null);
   var rows = sheet && sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 7).getValues() : [];
   var supplies = rows.filter(function (row) { return row[0] || row[1]; }).map(function (row) {
-    var id = String(row[0]), kind = String(row[2]), name = text_(row[1], 80), unit = String(row[3]);
+    var id = String(row[0]), kind = String(row[2]), name = text_(row[1], 80), unit = kind==='snack'&&cornStickBulkPack_(name)?'包':String(row[3]);
     if (!/^[A-Za-z0-9_-]{1,80}$/.test(id) || seen[id] || !name || ['snack','frozen','noodle','toner'].indexOf(kind) < 0 || supplyUnits_(kind).indexOf(unit) < 0) throw new Error('Invalid supply catalog');
     var known = INITIAL_SUPPLIES.filter(function (item) { return item.id === id; })[0];
     if (known && (known.kind !== kind || known.unit !== unit)) throw new Error('Invalid confirmed supply unit');
@@ -1477,23 +1514,23 @@ function supplyCatalog_(ss) {
 }
 
 function ensureSupplyStorage_(ss) {
-  var catalog = ss.getSheetByName(SHEETS.supplyCatalog), categoryMissing = false;
+  var catalog = ss.getSheetByName(SHEETS.supplyCatalog);
   if (catalog && catalog.getLastRow() > 0) {
     var header = catalog.getRange(1,1,1,7).getValues()[0];
     if (!SUPPLY_CATALOG_HEADERS.slice(0,5).every(function (label,index) { return header[index] === label; }) || (header[5] && header[5] !== 'category') || (header[6] && header[6] !== 'flavor')) throw websiteInputError_('SupplyCatalog 已有其他用途，請先確認品項與分類欄位。');
-    categoryMissing = !header[5];
-  }
-  catalog = ensureSheet_(ss, SHEETS.supplyCatalog, SUPPLY_CATALOG_HEADERS);
-  if (categoryMissing) catalog.getRange(1,6,1,1).setValues([['category']]);
-  catalog.getRange(1,7,1,1).setValues([['flavor']]);
-  websiteAppendMissing_(catalog, INITIAL_SUPPLIES.map(function (item) { return [item.id, item.name, item.kind, item.unit, true, item.category || '', sheetText_(item.flavor || '')]; }));
+    if(!header[5]||!header[6])catalog.getRange(1,6,1,2).setValues([SUPPLY_CATALOG_HEADERS.slice(5)]);
+  } else catalog = ensureSheet_(ss, SHEETS.supplyCatalog, SUPPLY_CATALOG_HEADERS);
+  var existing=catalog.getLastRow()>1?catalog.getRange(2,1,catalog.getLastRow()-1,7).getValues():[],known=Object.create(null);
+  existing.forEach(function(row,index){known[String(row[0])]=true;if(row[2]==='snack'&&cornStickBulkPack_(row[1])&&row[3]!=='包')catalog.getRange(index+2,4,1,1).setValues([['包']]);});
+  var missing=INITIAL_SUPPLIES.filter(function(item){return !known[item.id];}).map(function(item){return [item.id,item.name,item.kind,item.unit,true,item.category||'',sheetText_(item.flavor||'')];});
+  if(missing.length)catalog.getRange(catalog.getLastRow()+1,1,missing.length,7).setValues(missing);
   var history = ss.getSheetByName(SHEETS.supplyHistory);
   if (history && history.getLastRow() > 0) {
-    var first = history.getRange(1, 1, 1, 9).getValues()[0];
+    var first = history.getRange(1,1,1,11).getValues()[0];
     if (!SUPPLY_HISTORY_HEADERS.slice(0,9).every(function (label,index) { return first[index] === label; })) throw new Error('SupplyHistory schema conflict');
-  }
-  history = ensureSheet_(ss, SHEETS.supplyHistory, SUPPLY_HISTORY_HEADERS);
-  history.getRange(1, 10, 1, 2).setValues([SUPPLY_HISTORY_HEADERS.slice(9)]);
+    if((first[9]&&first[9]!==SUPPLY_HISTORY_HEADERS[9])||(first[10]&&first[10]!==SUPPLY_HISTORY_HEADERS[10]))throw new Error('SupplyHistory expiry schema conflict');
+    if(!first[9]||!first[10])history.getRange(1,10,1,2).setValues([SUPPLY_HISTORY_HEADERS.slice(9)]);
+  } else ensureSheet_(ss,SHEETS.supplyHistory,SUPPLY_HISTORY_HEADERS);
 }
 
 function supplyToday_(stamp) { return new Date(Date.parse(stamp) + 8 * 3600000).toISOString().slice(0, 10); }
@@ -1543,33 +1580,39 @@ function openSupplyBatches_(supplyId, events) {
 }
 
 function supplyInventory_(supplies, events) {
-  return supplies.map(function (item) {
-    var stock = null, lastCountAt = null, lastArrivalAt = null;
-    events.map(function (event, index) { return { event: event, index: index }; }).filter(function (entry) { return entry.event.supplyId === item.id; })
-      .sort(function (a,b) { return Date.parse(a.event.createdAt) - Date.parse(b.event.createdAt) || a.index - b.index; })
-      .forEach(function (entry) { var event = entry.event; if (event.type === 'count') { stock = event.quantity; lastCountAt = event.createdAt; } else if (event.type === 'restock') { stock = (stock === null ? 0 : stock) + event.quantity; lastArrivalAt = event.createdAt; } });
-    if (stock !== null && (!Number.isSafeInteger(stock) || stock > 999999)) throw new Error('Invalid supply balance');
-    return { id: item.id, name: item.name, kind: item.kind, unit: item.unit, active: item.active, stock: stock, lastCountAt: lastCountAt, lastArrivalAt:lastArrivalAt, ...(item.kind === 'snack' ? {category:item.category,flavor:item.flavor||''} : {}) };
+  var balances=Object.create(null);
+  events.map(function(event,index){return {event:event,index:index};}).sort(function(a,b){return Date.parse(a.event.createdAt)-Date.parse(b.event.createdAt)||a.index-b.index;}).forEach(function(row){
+    var event=row.event;if(event.type!=='count'&&event.type!=='restock')return;
+    var state=balances[event.supplyId]||{stock:null,lastCountAt:null,lastArrivalAt:null};
+    if(event.type==='count'){state.stock=event.quantity;state.lastCountAt=event.createdAt;}
+    else{state.stock=(state.stock===null?0:state.stock)+event.quantity;state.lastArrivalAt=event.createdAt;}
+    balances[event.supplyId]=state;
+  });
+  return supplies.map(function(item){
+    var state=balances[item.id]||{stock:null,lastCountAt:null,lastArrivalAt:null};
+    if(state.stock!==null&&(!Number.isSafeInteger(state.stock)||state.stock>999999||state.stock<0))throw new Error('Invalid supply balance');
+    return {id:item.id,name:item.name,kind:item.kind,unit:item.unit,active:item.active,stock:state.stock,lastCountAt:state.lastCountAt,lastArrivalAt:state.lastArrivalAt,...(item.kind==='snack'?{category:item.category,flavor:item.flavor||''}:{})};
   });
 }
 
-function renderSupplyWarehouse_(ss) {
-  var sheet = ensureSheet_(ss, SHEETS.supplyWarehouse);
-  var events = supplyEvents_(ss), inventory = sortInventoryEntries_(supplyInventory_(supplyCatalog_(ss), events)), preferences=restockPreferences_(ss);
+function renderSupplyWarehouse_(ss, options) {
+  options=options||{};
+  var sheet=ss.getSheetByName(SHEETS.supplyWarehouse)||ensureSheet_(ss,SHEETS.supplyWarehouse);
+  var events=options.events||supplyEvents_(ss),inventory=options.inventory||supplyInventory_(supplyCatalog_(ss),events),preferences=restockPreferences_(ss);
   inventory = sortInventoryEntries_(inventory,preferences);
   var headers = ['品項 ID','品項名稱','分類','單位','目前庫存','最近實際盤點','入庫批次保存期限','補貨標示','零食分類','零食口味'];
   // Do not replace an unrelated existing sheet with a coinciding name.
   if (sheet.getLastRow() > 0) {
-    var first = sheet.getRange(1, 1, 1, 6).getValues()[0];
+    var first = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
     if (!headers.slice(0,6).every(function (label,index) { return first[index] === label; })) return;
   }
-  // Generated view only; the source catalog and history are never cleared.
-  sheet.clearContents();
-  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  // An existing generated view keeps its headings and formatting on ordinary counts.
+  var fast=options.fast&&sheet.getLastRow()===inventory.length+1&&first&&headers.every(function(label,index){return first[index]===label;});
+  if(!fast){sheet.clearContents();sheet.getRange(1,1,1,headers.length).setValues([headers]);}
   if (inventory.length) sheet.getRange(2, 1, inventory.length, headers.length).setValues(inventory.map(function (item) {
     return [item.id, sheetText_(item.name), item.kind === 'snack' ? '零食' : item.kind === 'frozen' ? '冰品' : item.kind === 'noodle' ? '泡麵' : '碳粉', item.unit, item.stock === null ? '待盤點' : item.stock, item.lastCountAt || '', supplyNeedsExpiry_(item.kind) ? openSupplyBatches_(item.id,events).map(function (event) { return (event.expiresOn || '效期待補') + (event.type === 'expiry-set' ? '｜效期核對 ' : '｜入庫 ') + event.quantity + ' ' + item.unit; }).join('\n') : '', inventoryRestockStatus_(item.kind,item,restockMode_(preferences,item.kind,item.id)), item.category || '', sheetText_(item.flavor || '')];
   }));
-  styleHeader_(sheet, 1, headers.length); sheet.setFrozenRows(1);
+  if(!fast){styleHeader_(sheet,1,headers.length);sheet.setFrozenRows(1);}
 }
 
 function publicRecorder_(value) {
@@ -1614,13 +1657,18 @@ function historyEvents_(ss) {
 }
 
 function computeInventory_(catalog, events) {
+  var balances=Object.create(null);
+  events.map(function(event,index){return {event:event,index:index};}).filter(function(row){return row.event.accepted;}).sort(function(a,b){return Date.parse(a.event.createdAt)-Date.parse(b.event.createdAt)||a.index-b.index;}).forEach(function(row){
+    var event=row.event;if(event.type!=='count'&&event.type!=='restock')return;
+    var state=balances[event.drinkId]||{stock:null,lastCountAt:null,lastArrivalAt:null,received:0};
+    if(event.type==='count'){state.stock=event.quantity;state.lastCountAt=event.createdAt;state.received=0;}
+    else{state.stock=(state.stock===null?0:state.stock)+event.quantity;state.received+=event.quantity;state.lastArrivalAt=event.createdAt;}
+    balances[event.drinkId]=state;
+  });
   return catalog.map(function(drink){
-    var stock=null,lastCountAt=null,lastArrivalAt=null,received=0;
-    events.map(function(event,index){return {event:event,index:index};}).filter(function(row){return row.event.accepted&&row.event.drinkId===drink.id;}).sort(function(a,b){return Date.parse(a.event.createdAt)-Date.parse(b.event.createdAt)||a.index-b.index;}).forEach(function(row){var event=row.event;
-      if(event.type==='count'){stock=event.quantity;lastCountAt=event.createdAt;received=0;}else if(event.type==='restock'){stock=(stock===null?0:stock)+event.quantity;received+=event.quantity;lastArrivalAt=event.createdAt;}
-    });
-    if(stock!==null&&(!Number.isSafeInteger(stock)||stock>999999||stock<0))throw new Error('Invalid drink balance');
-    return {drink:drink,stock:stock,lastCountAt:lastCountAt,lastArrivalAt:lastArrivalAt,receivedAfterCount:stock===null?null:received};
+    var state=balances[drink.id]||{stock:null,lastCountAt:null,lastArrivalAt:null,received:0};
+    if(state.stock!==null&&(!Number.isSafeInteger(state.stock)||state.stock>999999||state.stock<0))throw new Error('Invalid drink balance');
+    return {drink:drink,stock:state.stock,lastCountAt:state.lastCountAt,lastArrivalAt:state.lastArrivalAt,receivedAfterCount:state.stock===null?null:state.received};
   });
 }
 
@@ -2003,15 +2051,22 @@ function updateRestockView_(ss, preference) {
   return current;
 }
 
-function renderWarehouse_(ss, inventory) {
+function renderWarehouse_(ss, inventory, fast) {
   cacheZeroDrinkIds_(inventory);inventory=visibleDrinkInventory_(inventory);
   var sheet = ss.getSheetByName(SHEETS.warehouse);
-  var formUrls = websiteFormUrls_();
   var preferences=restockPreferences_(ss);
   var rows = sortInventoryEntries_(inventory.filter(function (entry) { return entry.drink.active; }),preferences).map(function (entry) {
     var drink = entry.drink;
     return [drink.id, sheetText_(drink.name), drink.category, drink.packaging, drink.unit, drink.perCase === null ? '待確認' : drink.perCase, entry.stock === null ? '待盤點' : entry.stock, entry.lastCountAt ? new Date(entry.lastCountAt) : '', entry.receivedAfterCount === null ? '' : entry.receivedAfterCount, inventoryRestockStatus_('drink',entry,restockMode_(preferences,'drink',drink.id)), restockThreshold_('drink')];
   });
+  var headers = ['品項 ID', '飲料名稱', '分類', '包裝', '單位', '每箱數量', '目前庫存', '最近實際盤點', '盤點後到貨', '狀態', '提醒門檻'];
+  var currentHeader=fast&&sheet.getLastRow()===rows.length+6?sheet.getRange(6,1,1,11).getValues()[0]:null;
+  if(currentHeader&&headers.every(function(label,index){return currentHeader[index]===label;})){
+    if(rows.length)sheet.getRange(7,1,rows.length,11).setValues(rows);
+    sheet.getRange(4,2).setValue(new Date());
+    return;
+  }
+  var formUrls=websiteFormUrls_();
   // This is a generated view only. Source form responses, History, Catalog and
   // WishReview are retained and never cleared or recreated during refresh.
   sheet.clearContents();
@@ -2020,7 +2075,7 @@ function renderWarehouse_(ss, inventory) {
   sheet.getRange(3, 1).setFormula('=HYPERLINK("' + formUrls.stocktake + '","開啟盤點表單")');
   sheet.getRange(3, 4).setFormula('=HYPERLINK("' + formUrls.arrival + '","開啟實際到貨表單")');
   sheet.getRange(4, 1).setValue('檢視更新時間'); sheet.getRange(4, 2).setValue(new Date()).setNumberFormat('yyyy/MM/dd HH:mm');
-  var headers = ['品項 ID', '飲料名稱', '分類', '包裝', '單位', '每箱數量', '目前庫存', '最近實際盤點', '盤點後到貨', '狀態', '提醒門檻'];
+
   sheet.getRange(6, 1, 1, headers.length).setValues([headers]);
   if (rows.length) {
     sheet.getRange(7, 1, rows.length, 11).setValues(rows);

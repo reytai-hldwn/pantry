@@ -1,9 +1,9 @@
 import { drinkAvailability } from './drink-availability.js';
-import { coffeeReceiptInput, normalizeCoffeeReceipts } from './coffee.js';
+import { coffeeReceiptInput, normalizeCoffeeReceipts, coffeeKey } from './coffee.js';
 import { CATEGORIES_ORDER, canonicalDrinkCategory, canonicalDrinkPackaging } from './catalog.js';
 import { blankData, getWeeklyPopularity, safeUrl } from './domain.js';
 import { submitGoogleWebsiteCommand } from './google-write.js';
-import { normalizeSupplyWarehouse, canonicalSnackCategory, SNACK_CATEGORIES, SNACK_UNITS, supplyUnits, supplyNeedsExpiry, validSupplyExpiry } from './supplies.js';
+import { normalizeSupplyWarehouse, canonicalSupplyUnit, canonicalSnackCategory, SNACK_CATEGORIES, SNACK_UNITS, supplyUnits, supplyNeedsExpiry, validSupplyExpiry } from './supplies.js';
 import { isLowStockItem, isOutOfStockItem, inventoryLowThreshold, matchesInventoryStockFilter, normalizeRestockPreferences, restockThreshold } from './restock-preferences.js';
 import { inventoryActivity, inventoryTotals, normalizeInventoryTotals } from './inventory-activity.js';
 
@@ -832,6 +832,7 @@ export class GoogleInventoryStore {
     try { storage.setItem(key, JSON.stringify(pending)); }
     catch { throw new Error('目前無法保留送出紀錄，資料尚未送出。'); }
     this.lastWriteNeedsRefresh = false;
+    this.stocktakeRefreshPending = false;
     let result;
     try { result = await this.submitWebsiteCommand(endpoint, { requestId: pending.requestId, operation, data:protectedWrite&&credential?{...data,restockPin:credential.code}:data }, { readReceipt: this.readReceipt, messageReceipt:this.fastReceiptVersion===1 }); }
     catch (error) {
@@ -847,11 +848,50 @@ export class GoogleInventoryStore {
     this.adminSummaryReadAt = -Infinity;
     if (operation==='restock-preference' && this.applyRestockReceipt(data,result,fastRestock)) return result;
     this.warehouseSnapshot=null;
+    if (this.applyStocktakeReceipt(operation,data,result,pending.requestId)) { if(operation==='stocktake')this.invalidatePopularity();return result; }
     if (this.applyWishReceipt(operation, data, result, pending.requestId)) return result;
     if (operation==='zero-stock-decision' && this.applyZeroStockReceipt(data,result)) return result;
     if (['stocktake', 'arrival', 'product', 'new-arrival','batch-arrival'].includes(operation)) this.invalidatePopularity();
     try { await this.read(); } catch { this.lastWriteNeedsRefresh = true; }
     return result;
+  }
+
+  applyStocktakeReceipt(operation, data, result, requestId) {
+    const patch=result?.stocktake;
+    if(!this.inWarehouse||result?.operation!==operation||!['stocktake','supply-stocktake','coffee-stocktake'].includes(operation)||patch?.version!==1||typeof patch.snapshotAt!=='string'||!Number.isFinite(Date.parse(patch.snapshotAt))||(this.snapshotAt&&Date.parse(patch.snapshotAt)<Date.parse(this.snapshotAt)))return false;
+    try{
+      if(operation==='coffee-stocktake'){
+        if(patch.kind!=='coffee')return false;
+        const rows=normalizeCoffeeReceipts(patch.entries),key=coffeeKey(data);
+        if(rows.some(row=>coffeeKey(row)!==key||Date.parse(row.createdAt)>Date.parse(patch.snapshotAt))||!rows.some(row=>row.id===`coffee-web-${requestId}`&&row.type==='count'&&row.bags===data.bags&&row.recorder===data.recorder.trim()))return false;
+        this.coffeeReceipts=[...this.coffeeReceipts.filter(row=>coffeeKey(row)!==key),...rows];
+      }else{
+        const drink=operation==='stocktake',idField=drink?'drinkId':'supplyId';
+        if(patch.kind!==(drink?'drink':'supply')||!Array.isArray(patch.items)||!Array.isArray(patch.events)||!Array.isArray(data.entries)||patch.items.length!==data.entries.length||patch.events.length!==data.entries.length)return false;
+        const expected=new Map(data.entries.map(entry=>[entry[idField],entry]));
+        if(expected.size!==data.entries.length||patch.items.some(item=>!expected.has(item.id)||!Number.isSafeInteger(item.stock)||item.stock<0||item.stock>999999))return false;
+        for(const event of patch.events){const entry=expected.get(event[idField]);if(!entry||event.id!==`website:${requestId}:${entry[idField]}`||event.type!=='count'||event.quantity!==entry.quantity||event.recorder!==data.recorder.trim()||Date.parse(event.createdAt)>Date.parse(patch.snapshotAt))return false;}
+        const prior=drink?this.data.drinks:this.supplies;
+        if(patch.items.some(item=>!prior.some(old=>old.id===item.id&&(!drink?old.kind===item.kind:true))))return false;
+        let items,events;
+        if(drink){
+          const value=normalizeGooglePublicData({ok:true,drinks:patch.items,events:patch.events,wishes:[],formUrls:this.formUrls,voteForm:this.voteForm,wishForm:this.wishForm,adminUrl:this.adminUrl,lastInventoryAt:patch.lastInventoryAt},{warehouse:true});
+          items=value.data.drinks;events=value.data.events;
+        }else{
+          const value=normalizeSupplyWarehouse({supplyEntry:{version:1,snackVersion:1,snackPolicyVersion:2,frozenVersion:1},supplies:patch.items,supplyEvents:patch.events});
+          items=value.supplies;events=value.supplyEvents;
+        }
+        if(new Set(items.map(item=>item.id)).size!==expected.size||new Set(events.map(event=>event[idField])).size!==expected.size)return false;
+        const updates=new Map(items.map(item=>[item.id,item])),eventIds=new Set(events.map(event=>event.id));
+        const updated=prior.map(item=>updates.get(item.id)||item);
+        if(drink)this.data={...this.data,drinks:updated,events:[...this.data.events.filter(event=>!eventIds.has(event.id)),...events],lastInventoryAt:patch.lastInventoryAt};
+        else {this.supplies=updated;this.supplyEvents=[...this.supplyEvents.filter(event=>!eventIds.has(event.id)),...events];}
+      }
+    }catch{return false;}
+    this.warehouseViewReadAt=-Infinity;
+    this.revision=JSON.stringify({data:this.data,supplies:this.supplies,supplyEvents:this.supplyEvents,coffeeReceipts:this.coffeeReceipts,restockPreferences:this.restockPreferences});
+    this.stocktakeRefreshPending=true;
+    return true;
   }
 
   async submitWish({ kind, name, url = '', note = '' }) {
@@ -891,7 +931,7 @@ export class GoogleInventoryStore {
 
   async submitNewArrival(data) {
     if(data.kind==='frozen'&&!this.supportsFrozen)throw new Error('請先更新 Apps Script 部署，啟用冰品庫存。');
-    if(data.kind==='snack')data={...data,category:canonicalSnackCategory(data.category)};
+    if(data.kind==='snack')data={...data,category:canonicalSnackCategory(data.category),unit:canonicalSupplyUnit(data.kind,data.name,data.unit)};
     if (data.kind === 'drink') {
       if (!CATEGORIES_ORDER.includes(data.category)) throw new Error('請選擇飲料分類。');
       if (!this.supportsDrinkArrivalCategories) throw new Error('請先更新原 Apps Script 部署，才能保存新品飲料的分類。');

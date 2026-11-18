@@ -2,7 +2,7 @@ import { drinkAvailability } from './drink-availability.js';
 import { coffeeReceiptInput, coffeeInventory, coffeeKey, coffeeToday } from './coffee.js';
 import { applyInitialStocktake, blankData, safeUrl, uid } from './domain.js';
 import { CATEGORIES_ORDER, DEFAULT_CASE_SIZE, createCompanyData, prepareCompanyCatalog } from './catalog.js';
-import { initialSupplies, prepareSupplyCatalog, supplyAvailability, canonicalSnackCategory, SNACK_CATEGORIES, SNACK_UNITS, supplyUnits, supplyBatches, supplyNeedsExpiry, supplySupportsExpiryHistory, supplyToday, validSupplyExpiry } from './supplies.js';
+import { initialSupplies, prepareSupplyCatalog, supplyAvailability, canonicalSupplyUnit, canonicalSnackCategory, SNACK_CATEGORIES, SNACK_UNITS, supplyUnits, supplyBatches, supplyNeedsExpiry, supplySupportsExpiryHistory, supplyToday, validSupplyExpiry } from './supplies.js';
 import { recordedBalances } from './inventory-activity.js';
 import { supplyNameKey, supplyLabel } from './supplies.js';
 import { RESTOCK_MODES, hasRecordedStock, isLowStockItem, restockPreferenceMode } from './restock-preferences.js';
@@ -292,7 +292,7 @@ export class InventoryStore {
   }
 
   async submitNewArrival({kind,name,unit,quantity,recorder,note='',expiresOn=null,category,flavor=''}) {
-    if(kind==='snack')category=canonicalSnackCategory(category);
+    if(kind==='snack'){category=canonicalSnackCategory(category);unit=canonicalSupplyUnit(kind,name,unit);}
     if (!this.supportsNewArrivals || !this.canEdit) throw new Error('請從支援新品入庫的管理入口登記。');
     if (!['drink','snack','frozen','noodle'].includes(kind)) throw new Error('新品到貨僅支援飲料、零食、冰品與泡麵。');
     if (typeof name!=='string'||!name.trim()||name.trim().length>80) throw new Error('請填寫新品名稱，最多 80 字。');

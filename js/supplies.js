@@ -5,7 +5,9 @@ import { matchesInventoryStockFilter } from './restock-preferences.js';
 export const SUPPLY_KINDS = Object.freeze({ snack:'零食', frozen:'冰品', noodle: '泡麵', toner: '碳粉' });
 export const SNACK_CATEGORIES = Object.freeze(['太空包','巧克力','甜/鹹餅乾','健康零食','蛋白質零食','其他鹹食','其他甜食']);
 export const canonicalSnackCategory = category => ['燕麥棒/餅','燕麥棒／餅','燕麥棒'].includes(category) ? '健康零食' : category;
-export const snackPackHint = item => /[（(]量販包[）)]/.test(item?.name||'') ? '量販包以整個大包為 1 包，不換算內袋數量。' : '';
+export const cornStickBulkPack = name => /^鴻津玉米棒(?:[（(]量販包[）)])?$/.test(String(name||'').normalize('NFKC').replace(/\s+/g,''));
+export const canonicalSupplyUnit = (kind,name,unit) => kind==='snack'&&cornStickBulkPack(name)?'包':unit;
+export const snackPackHint = item => (cornStickBulkPack(item?.name)||/[（(]量販包[）)]/.test(item?.name||'')) ? '量販包以整個大包為 1 包，不換算內袋數量。' : '';
 export const SNACK_UNITS = Object.freeze(['包','盒','條','個','顆']);
 export const FROZEN_UNITS = Object.freeze(['支','杯','盒','包','個','桶']);
 export const supplyUnits = kind => kind==='snack'?SNACK_UNITS:kind==='frozen'?FROZEN_UNITS:kind==='noodle'?['杯','碗']:kind==='toner'?['盒']:[];
@@ -51,6 +53,7 @@ export function prepareSupplyCatalog(data) {
   let changed=false;
   const supplies=(Array.isArray(data.supplies)?data.supplies:[]).map(item=>{
     const seed=SUPPLY_CATALOG.find(seed=>seed.id===item.id);
+    if(canonicalSupplyUnit(item.kind,item.name,item.unit)!==item.unit){changed=true;item={...item,unit:'包'};}
     if(item.kind==='snack'&&canonicalSnackCategory(item.category)!==item.category){
       changed=true;item={...item,category:canonicalSnackCategory(item.category)};
     }
@@ -132,7 +135,7 @@ export function normalizeSupplyWarehouse(payload) {
     if(item.stock!==null&&!validCount(item.stock))throw new Error('零食、冰品、泡麵與碳粉庫存數量不正確。');
     if(item.lastCountAt!==null&&!validDate(item.lastCountAt))throw new Error('零食、冰品、泡麵與碳粉盤點時間不正確。');
     ids.add(item.id);
-    return supplyAvailability({id:item.id,name:item.name.trim(),kind:item.kind,unit:item.unit,active:item.active,...(item.autoArchived===true?{autoArchived:true}:{}),stock:item.stock,lastCountAt:item.lastCountAt,...(item.lastArrivalAt?{lastArrivalAt:validDate(item.lastArrivalAt)?item.lastArrivalAt:(()=>{throw new Error('入庫時間不正確。');})()}:{}),...(item.kind==='snack'?{category:canonicalSnackCategory(item.category),flavor:item.flavor||''}: {})});
+    return supplyAvailability({id:item.id,name:item.name.trim(),kind:item.kind,unit:canonicalSupplyUnit(item.kind,item.name,item.unit),active:item.active,...(item.autoArchived===true?{autoArchived:true}:{}),stock:item.stock,lastCountAt:item.lastCountAt,...(item.lastArrivalAt?{lastArrivalAt:validDate(item.lastArrivalAt)?item.lastArrivalAt:(()=>{throw new Error('入庫時間不正確。');})()}:{}),...(item.kind==='snack'?{category:canonicalSnackCategory(item.category),flavor:item.flavor||''}: {})});
   });
   const supplyEvents=payload.supplyEvents.map(event=>{
     if(!event||typeof event.id!=='string'||!event.id||event.id.length>240||eventIds.has(event.id)||!ids.has(event.supplyId)||!['count','restock','expiry-close','expiry-set'].includes(event.type)||!validCount(event.quantity)||(['restock','expiry-set'].includes(event.type)&&event.quantity===0)||(event.type==='expiry-close'&&event.quantity!==0)||!validDate(event.createdAt)||event.accepted===false||typeof event.recorder!=='string'||!event.recorder.trim()||event.recorder.length>80||typeof event.note!=='string'||event.note.length>500)throw new Error('零食、冰品、泡麵與碳粉異動紀錄不正確。');

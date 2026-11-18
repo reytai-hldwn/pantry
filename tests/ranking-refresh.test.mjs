@@ -38,9 +38,9 @@ test('popularity expires after one minute, force bypasses cache, and failed refr
  const latest=c.store.popularity;c.store.readPublicData=async()=>{throw Error('offline');};await assert.rejects(c.store.readPopularity({force:true}),/offline/);assert.deepEqual(c.store.popularity,latest);
 });
 
-test('a confirmed stocktake invalidates aggregate cache even if its following warehouse read fails',async()=>{
+test('a confirmed stocktake invalidates aggregate cache while an optional background read can fail',async()=>{
  const b=websiteBackend(),c=client(b);await c.store.readWarehouse();await c.store.readPopularity();let aggregates=0;
- const read=c.store.readPublicData;c.store.readPublicData=async(url,opts)=>{if(opts.action==='warehouse')throw Error('refresh failed');aggregates++;return read(url,opts);};await c.store.submitStocktake([{drinkId:'tea',quantity:15}],'虛構');assert.equal(c.store.lastWriteNeedsRefresh,true);await c.store.readPopularity();assert.equal(aggregates,1);
+ const read=c.store.readPublicData;c.store.readPublicData=async(url,opts)=>{if(opts.action==='warehouse')throw Error('refresh failed');aggregates++;return read(url,opts);};await c.store.submitStocktake([{drinkId:'tea',quantity:15}],'虛構');assert.equal(c.store.stocktakeRefreshPending,true);assert.equal(c.store.lastWriteNeedsRefresh,false);await assert.rejects(c.store.readWarehouse(),/refresh failed/);await c.store.readPopularity();assert.equal(aggregates,1);
 });
 
 test('late pre-stocktake responses and errors cannot restore an old aggregate or clear a newer request',async()=>{

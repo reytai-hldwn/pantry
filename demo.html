@@ -1035,7 +1035,9 @@ function normalizeInventoryTotals(groups) {
 const SUPPLY_KINDS = Object.freeze({ snack:'零食', frozen:'冰品', noodle: '泡麵', toner: '碳粉' });
 const SNACK_CATEGORIES = Object.freeze(['太空包','巧克力','甜/鹹餅乾','健康零食','蛋白質零食','其他鹹食','其他甜食']);
 const canonicalSnackCategory = category => ['燕麥棒/餅','燕麥棒／餅','燕麥棒'].includes(category) ? '健康零食' : category;
-const snackPackHint = item => /[（(]量販包[）)]/.test(item?.name||'') ? '量販包以整個大包為 1 包，不換算內袋數量。' : '';
+const cornStickBulkPack = name => /^鴻津玉米棒(?:[（(]量販包[）)])?$/.test(String(name||'').normalize('NFKC').replace(/\s+/g,''));
+const canonicalSupplyUnit = (kind,name,unit) => kind==='snack'&&cornStickBulkPack(name)?'包':unit;
+const snackPackHint = item => (cornStickBulkPack(item?.name)||/[（(]量販包[）)]/.test(item?.name||'')) ? '量販包以整個大包為 1 包，不換算內袋數量。' : '';
 const SNACK_UNITS = Object.freeze(['包','盒','條','個','顆']);
 const FROZEN_UNITS = Object.freeze(['支','杯','盒','包','個','桶']);
 const supplyUnits = kind => kind==='snack'?SNACK_UNITS:kind==='frozen'?FROZEN_UNITS:kind==='noodle'?['杯','碗']:kind==='toner'?['盒']:[];
@@ -1081,6 +1083,7 @@ function prepareSupplyCatalog(data) {
   let changed=false;
   const supplies=(Array.isArray(data.supplies)?data.supplies:[]).map(item=>{
     const seed=SUPPLY_CATALOG.find(seed=>seed.id===item.id);
+    if(canonicalSupplyUnit(item.kind,item.name,item.unit)!==item.unit){changed=true;item={...item,unit:'包'};}
     if(item.kind==='snack'&&canonicalSnackCategory(item.category)!==item.category){
       changed=true;item={...item,category:canonicalSnackCategory(item.category)};
     }
@@ -1162,7 +1165,7 @@ function normalizeSupplyWarehouse(payload) {
     if(item.stock!==null&&!validCount(item.stock))throw new Error('零食、冰品、泡麵與碳粉庫存數量不正確。');
     if(item.lastCountAt!==null&&!validDate(item.lastCountAt))throw new Error('零食、冰品、泡麵與碳粉盤點時間不正確。');
     ids.add(item.id);
-    return supplyAvailability({id:item.id,name:item.name.trim(),kind:item.kind,unit:item.unit,active:item.active,...(item.autoArchived===true?{autoArchived:true}:{}),stock:item.stock,lastCountAt:item.lastCountAt,...(item.lastArrivalAt?{lastArrivalAt:validDate(item.lastArrivalAt)?item.lastArrivalAt:(()=>{throw new Error('入庫時間不正確。');})()}:{}),...(item.kind==='snack'?{category:canonicalSnackCategory(item.category),flavor:item.flavor||''}: {})});
+    return supplyAvailability({id:item.id,name:item.name.trim(),kind:item.kind,unit:canonicalSupplyUnit(item.kind,item.name,item.unit),active:item.active,...(item.autoArchived===true?{autoArchived:true}:{}),stock:item.stock,lastCountAt:item.lastCountAt,...(item.lastArrivalAt?{lastArrivalAt:validDate(item.lastArrivalAt)?item.lastArrivalAt:(()=>{throw new Error('入庫時間不正確。');})()}:{}),...(item.kind==='snack'?{category:canonicalSnackCategory(item.category),flavor:item.flavor||''}: {})});
   });
   const supplyEvents=payload.supplyEvents.map(event=>{
     if(!event||typeof event.id!=='string'||!event.id||event.id.length>240||eventIds.has(event.id)||!ids.has(event.supplyId)||!['count','restock','expiry-close','expiry-set'].includes(event.type)||!validCount(event.quantity)||(['restock','expiry-set'].includes(event.type)&&event.quantity===0)||(event.type==='expiry-close'&&event.quantity!==0)||!validDate(event.createdAt)||event.accepted===false||typeof event.recorder!=='string'||!event.recorder.trim()||event.recorder.length>80||typeof event.note!=='string'||event.note.length>500)throw new Error('零食、冰品、泡麵與碳粉異動紀錄不正確。');
@@ -4552,6 +4555,7 @@ class GoogleInventoryStore {
     try { storage.setItem(key, JSON.stringify(pending)); }
     catch { throw new Error('目前無法保留送出紀錄，資料尚未送出。'); }
     this.lastWriteNeedsRefresh = false;
+    this.stocktakeRefreshPending = false;
     let result;
     try { result = await this.submitWebsiteCommand(endpoint, { requestId: pending.requestId, operation, data:protectedWrite&&credential?{...data,restockPin:credential.code}:data }, { readReceipt: this.readReceipt, messageReceipt:this.fastReceiptVersion===1 }); }
     catch (error) {
@@ -4567,11 +4571,50 @@ class GoogleInventoryStore {
     this.adminSummaryReadAt = -Infinity;
     if (operation==='restock-preference' && this.applyRestockReceipt(data,result,fastRestock)) return result;
     this.warehouseSnapshot=null;
+    if (this.applyStocktakeReceipt(operation,data,result,pending.requestId)) { if(operation==='stocktake')this.invalidatePopularity();return result; }
     if (this.applyWishReceipt(operation, data, result, pending.requestId)) return result;
     if (operation==='zero-stock-decision' && this.applyZeroStockReceipt(data,result)) return result;
     if (['stocktake', 'arrival', 'product', 'new-arrival','batch-arrival'].includes(operation)) this.invalidatePopularity();
     try { await this.read(); } catch { this.lastWriteNeedsRefresh = true; }
     return result;
+  }
+
+  applyStocktakeReceipt(operation, data, result, requestId) {
+    const patch=result?.stocktake;
+    if(!this.inWarehouse||result?.operation!==operation||!['stocktake','supply-stocktake','coffee-stocktake'].includes(operation)||patch?.version!==1||typeof patch.snapshotAt!=='string'||!Number.isFinite(Date.parse(patch.snapshotAt))||(this.snapshotAt&&Date.parse(patch.snapshotAt)<Date.parse(this.snapshotAt)))return false;
+    try{
+      if(operation==='coffee-stocktake'){
+        if(patch.kind!=='coffee')return false;
+        const rows=normalizeCoffeeReceipts(patch.entries),key=coffeeKey(data);
+        if(rows.some(row=>coffeeKey(row)!==key||Date.parse(row.createdAt)>Date.parse(patch.snapshotAt))||!rows.some(row=>row.id===`coffee-web-${requestId}`&&row.type==='count'&&row.bags===data.bags&&row.recorder===data.recorder.trim()))return false;
+        this.coffeeReceipts=[...this.coffeeReceipts.filter(row=>coffeeKey(row)!==key),...rows];
+      }else{
+        const drink=operation==='stocktake',idField=drink?'drinkId':'supplyId';
+        if(patch.kind!==(drink?'drink':'supply')||!Array.isArray(patch.items)||!Array.isArray(patch.events)||!Array.isArray(data.entries)||patch.items.length!==data.entries.length||patch.events.length!==data.entries.length)return false;
+        const expected=new Map(data.entries.map(entry=>[entry[idField],entry]));
+        if(expected.size!==data.entries.length||patch.items.some(item=>!expected.has(item.id)||!Number.isSafeInteger(item.stock)||item.stock<0||item.stock>999999))return false;
+        for(const event of patch.events){const entry=expected.get(event[idField]);if(!entry||event.id!==`website:${requestId}:${entry[idField]}`||event.type!=='count'||event.quantity!==entry.quantity||event.recorder!==data.recorder.trim()||Date.parse(event.createdAt)>Date.parse(patch.snapshotAt))return false;}
+        const prior=drink?this.data.drinks:this.supplies;
+        if(patch.items.some(item=>!prior.some(old=>old.id===item.id&&(!drink?old.kind===item.kind:true))))return false;
+        let items,events;
+        if(drink){
+          const value=normalizeGooglePublicData({ok:true,drinks:patch.items,events:patch.events,wishes:[],formUrls:this.formUrls,voteForm:this.voteForm,wishForm:this.wishForm,adminUrl:this.adminUrl,lastInventoryAt:patch.lastInventoryAt},{warehouse:true});
+          items=value.data.drinks;events=value.data.events;
+        }else{
+          const value=normalizeSupplyWarehouse({supplyEntry:{version:1,snackVersion:1,snackPolicyVersion:2,frozenVersion:1},supplies:patch.items,supplyEvents:patch.events});
+          items=value.supplies;events=value.supplyEvents;
+        }
+        if(new Set(items.map(item=>item.id)).size!==expected.size||new Set(events.map(event=>event[idField])).size!==expected.size)return false;
+        const updates=new Map(items.map(item=>[item.id,item])),eventIds=new Set(events.map(event=>event.id));
+        const updated=prior.map(item=>updates.get(item.id)||item);
+        if(drink)this.data={...this.data,drinks:updated,events:[...this.data.events.filter(event=>!eventIds.has(event.id)),...events],lastInventoryAt:patch.lastInventoryAt};
+        else {this.supplies=updated;this.supplyEvents=[...this.supplyEvents.filter(event=>!eventIds.has(event.id)),...events];}
+      }
+    }catch{return false;}
+    this.warehouseViewReadAt=-Infinity;
+    this.revision=JSON.stringify({data:this.data,supplies:this.supplies,supplyEvents:this.supplyEvents,coffeeReceipts:this.coffeeReceipts,restockPreferences:this.restockPreferences});
+    this.stocktakeRefreshPending=true;
+    return true;
   }
 
   async submitWish({ kind, name, url = '', note = '' }) {
@@ -4611,7 +4654,7 @@ class GoogleInventoryStore {
 
   async submitNewArrival(data) {
     if(data.kind==='frozen'&&!this.supportsFrozen)throw new Error('請先更新 Apps Script 部署，啟用冰品庫存。');
-    if(data.kind==='snack')data={...data,category:canonicalSnackCategory(data.category)};
+    if(data.kind==='snack')data={...data,category:canonicalSnackCategory(data.category),unit:canonicalSupplyUnit(data.kind,data.name,data.unit)};
     if (data.kind === 'drink') {
       if (!CATEGORIES_ORDER.includes(data.category)) throw new Error('請選擇飲料分類。');
       if (!this.supportsDrinkArrivalCategories) throw new Error('請先更新原 Apps Script 部署，才能保存新品飲料的分類。');
@@ -5037,7 +5080,7 @@ class InventoryStore {
   }
 
   async submitNewArrival({kind,name,unit,quantity,recorder,note='',expiresOn=null,category,flavor=''}) {
-    if(kind==='snack')category=canonicalSnackCategory(category);
+    if(kind==='snack'){category=canonicalSnackCategory(category);unit=canonicalSupplyUnit(kind,name,unit);}
     if (!this.supportsNewArrivals || !this.canEdit) throw new Error('請從支援新品入庫的管理入口登記。');
     if (!['drink','snack','frozen','noodle'].includes(kind)) throw new Error('新品到貨僅支援飲料、零食、冰品與泡麵。');
     if (typeof name!=='string'||!name.trim()||name.trim().length>80) throw new Error('請填寫新品名稱，最多 80 字。');
@@ -5496,7 +5539,7 @@ function renderSupplySearchControls() {
 function supplyCountCell(item) {
   const icons = { '太空包':'🥔', '巧克力':'🍫', '甜/鹹餅乾':'🍪', '健康零食':'🌾', '蛋白質零食':'💪', '其他鹹食':'🥨', '其他甜食':'🍬' };
   const icon = item.kind === 'toner' ? `<span class="toner-swatch toner-${h(item.id.split('-').pop())}"></span>` : item.kind === 'noodle' ? '🍜' : item.kind === 'frozen' ? '❄️' : icons[item.category] || '🍿';
-  return `<div class="supply-count-item"><span class="drink-avatar supply-count-avatar" aria-hidden="true">${icon}</span><span class="supply-count-label"><strong>${h(item.name)}</strong><small>${item.flavor ? `${h(item.flavor)} · ` : ''}${h(item.kind === 'snack' ? item.category : SUPPLY_KINDS[item.kind])}</small></span></div>`;
+  return `<div class="supply-count-item"><span class="drink-avatar supply-count-avatar" aria-hidden="true">${icon}</span><span class="supply-count-label"><strong>${h(item.name)}</strong><small>${item.flavor ? `${h(item.flavor)} · ` : ''}${h(item.kind === 'snack' ? item.category : SUPPLY_KINDS[item.kind])}${snackPackHint(item)?` · ${h(snackPackHint(item))}`:''}</small></span></div>`;
 }
 function supplyCountTable(items) {
   return `<div class="panel supply-count-panel"><div class="table-scroll"><table class="count-table supply-count-table"><colgroup><col class="count-name-width"><col class="count-stock-width"><col class="count-number-width"></colgroup><thead><tr><th>品項</th><th>上次紀錄數量</th><th>這次實際盤點</th></tr></thead><tbody>${items.map(item => `<tr data-count-item="${h(item.id)}" data-count-category="${h(item.category||'')}" data-count-product="${h(item.name)}" data-count-label="${h(supplyLabel(item))}"><td class="supply-count-name">${supplyCountCell(item)}</td><td class="supply-count-stock" data-label="上次紀錄數量"><span class="muted">${hasRecordedStock(item) ? `${item.stock} ${h(item.unit)}` : '尚未確認'}</span></td><td class="supply-count-number" data-label="這次實際盤點"><input class="count-input" type="number" name="${h(item.id)}" data-supply-count min="0" max="999999" step="1" inputmode="numeric" placeholder="未盤點留白" aria-label="${h(supplyLabel(item))}實際剩餘數量"><span class="count-unit">${h(item.unit)}</span></td></tr>`).join('')}</tbody></table></div></div>`;
@@ -5509,7 +5552,7 @@ function renderSupplyInventory(){
     const arrival=(store.supplyEvents||[]).filter(event=>event.supplyId===item.id&&event.type==='restock').sort((a,b)=>Date.parse(b.createdAt)-Date.parse(a.createdAt))[0];
     const color=item.kind==='toner'?item.id.split('-').pop():'';
     const canArrive=canSupplyArrive(item.kind)&&(item.active!==false||store.supportsArchivedArrivals);
-    return `<tr data-supply-id="${h(item.id)}"><td class="supply-col-name"><div class="supply-name">${color?`<span class="toner-swatch toner-${h(color)}" aria-hidden="true"></span>`:`<span class="noodle-mark" aria-hidden="true">${item.kind==='snack'?'▧':item.kind==='frozen'?'❄':'♨'}</span>`}<strong>${h(supplyLabel(item))}</strong></div><span class="cell-note">單位：${h(item.unit)}${item.kind==='snack'?` · ${h(item.category)}`:''}</span></td><td class="supply-col-stock" data-label="${item.kind==='snack'?'紀錄數量':'庫存數量'}"><div class="stock-value ${needsRestock(item,item.kind)?'low warehouse-low':''}">${item.stock===null?(item.kind==='snack'?'尚未確認':'待盤點'):item.stock}<small>${item.stock===null?'':h(item.unit)}</small></div>${item.active===false?'<span class="pill pill-muted">歷史品項</span>':''}${restockState(item,item.kind)}</td>${supplyNeedsExpiry(item.kind)?`<td class="supply-col-expiry" data-label="保存期限／入庫批次">${renderSupplyBatches(item)}</td>`:''}<td class="cell-note supply-col-count" data-label="${item.kind==='snack'?'最近數量更新':'最近盤點'}">${formatDate(item.kind==='snack'?[item.lastCountAt,item.lastArrivalAt].filter(Boolean).sort().at(-1):item.lastCountAt,true)}</td><td class="cell-note supply-col-arrival" data-label="最近入庫">${arrival?`${formatDate(arrival.createdAt,true)} · ＋${arrival.quantity} ${h(item.unit)}`:'尚無紀錄'}</td><td class="supply-col-actions"><div class="inline-actions">${button('＋ 快速入庫','supply-arrival',`data-id="${h(item.id)}"${canArrive?'':' disabled'}`,'button-small button-outline')}${supplyNeedsExpiry(item.kind)?button('補登效期','supply-expiry-set',`data-id="${h(item.id)}"${store.supportsSupplyExpirySet&&(item.kind!=='snack'||store.supportsSnacks)&&item.lastCountAt&&item.stock>0?'':' disabled'}`,'button-small button-outline'):''}${item.kind==='snack'?button('編輯品名／口味','snack-details',`data-id="${h(item.id)}"${store.supportsSnackFlavors&&item.active!==false?'':' disabled'}`,'button-small button-plain'):''}${item.active===false?'':button(item.kind==='snack'?'更新數量':'盤點','supply-count',`data-id="${h(item.id)}"${store.supportsSupplies&&(item.kind!=='snack'||store.supportsSnacks)?'':' disabled'}`,'button-small button-plain')}</div></td></tr>`;
+    return `<tr data-supply-id="${h(item.id)}"><td class="supply-col-name"><div class="supply-name">${color?`<span class="toner-swatch toner-${h(color)}" aria-hidden="true"></span>`:`<span class="noodle-mark" aria-hidden="true">${item.kind==='snack'?'▧':item.kind==='frozen'?'❄':'♨'}</span>`}<strong>${h(supplyLabel(item))}</strong></div><span class="cell-note">單位：${h(item.unit)}${item.kind==='snack'?` · ${h(item.category)}`:''}${snackPackHint(item)?` · ${h(snackPackHint(item))}`:''}</span></td><td class="supply-col-stock" data-label="${item.kind==='snack'?'紀錄數量':'庫存數量'}"><div class="stock-value ${needsRestock(item,item.kind)?'low warehouse-low':''}">${item.stock===null?(item.kind==='snack'?'尚未確認':'待盤點'):item.stock}<small>${item.stock===null?'':h(item.unit)}</small></div>${item.active===false?'<span class="pill pill-muted">歷史品項</span>':''}${restockState(item,item.kind)}</td>${supplyNeedsExpiry(item.kind)?`<td class="supply-col-expiry" data-label="保存期限／入庫批次">${renderSupplyBatches(item)}</td>`:''}<td class="cell-note supply-col-count" data-label="${item.kind==='snack'?'最近數量更新':'最近盤點'}">${formatDate(item.kind==='snack'?[item.lastCountAt,item.lastArrivalAt].filter(Boolean).sort().at(-1):item.lastCountAt,true)}</td><td class="cell-note supply-col-arrival" data-label="最近入庫">${arrival?`${formatDate(arrival.createdAt,true)} · ＋${arrival.quantity} ${h(item.unit)}`:'尚無紀錄'}</td><td class="supply-col-actions"><div class="inline-actions">${button('＋ 快速入庫','supply-arrival',`data-id="${h(item.id)}"${canArrive?'':' disabled'}`,'button-small button-outline')}${supplyNeedsExpiry(item.kind)?button('補登效期','supply-expiry-set',`data-id="${h(item.id)}"${store.supportsSupplyExpirySet&&(item.kind!=='snack'||store.supportsSnacks)&&item.lastCountAt&&item.stock>0?'':' disabled'}`,'button-small button-outline'):''}${item.kind==='snack'?button('編輯品名／口味','snack-details',`data-id="${h(item.id)}"${store.supportsSnackFlavors&&item.active!==false?'':' disabled'}`,'button-small button-plain'):''}${item.active===false?'':button(item.kind==='snack'?'更新數量':'盤點','supply-count',`data-id="${h(item.id)}"${store.supportsSupplies&&(item.kind!=='snack'||store.supportsSnacks)?'':' disabled'}`,'button-small button-plain')}</div></td></tr>`;
   }).join('')}</tbody></table></div><div class="table-bottom">顯示 ${items.length} 種${SUPPLY_KINDS[warehouseKind]} · 每次登記保留時間與登記人</div>`:empty('找不到這個品項','換個關鍵字看看。');
 }
 
@@ -6534,6 +6577,7 @@ async function withBusy(task, element) {
     saveStatus?.remove();
     element?.removeAttribute('aria-busy');
     buttons.forEach((item) => { item.disabled = false; }); busy = false;
+    if(store.stocktakeRefreshPending){store.stocktakeRefreshPending=false;setTimeout(()=>refreshCurrentView(),0);}
   }
 }
 
@@ -6654,7 +6698,7 @@ $('#logout-button').addEventListener('click', () => {
 });
 async function refreshCurrentView(manual = false) {
   if (!ready || busy || refreshing || routeLoading) return;
-  if (!manual && (dirty || modal.open || !['overview', 'wishes', 'history', 'archive', 'consumption', 'restock-coffee', 'products'].includes(view) || document.hidden)) return;
+  if (!manual && (dirty || modal.open || !['overview', 'wishes', 'history', 'archive', 'consumption', 'restock-coffee', 'products', 'count'].includes(view) || document.hidden)) return;
   if (manual && dirty && !confirm('重新讀取會捨棄未儲存的輸入，確定繼續嗎？')) return;
   const sequence = routeSequence, inputs = inputSequence, currentView = view, revision = store.revision;
   const button = $('#refresh-button');
