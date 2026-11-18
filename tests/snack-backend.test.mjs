@@ -86,7 +86,7 @@ test('dated snack arrivals, expiry completion, closing and zero counts preserve 
   b.send('supply-stocktake',{entries:[{supplyId,quantity:0}],recorder:'測試盤點'});assert.equal(b.ctx.openSupplyBatches_(supplyId,b.ctx.supplyEvents_(b.ss)).length,0);
 });
 
-test('snack manual consideration flags allow unknown, zero and high stock and survive all quantity updates until unchecked',()=>{
+test('snack manual consideration flags allow unknown, zero and high stock survive counts and automatically clear on arrival',()=>{
   for(const quantity of [null,0,27]){
     const b=websiteBackend(),supplyId='supply-snack-02';
     if(quantity!==null)b.send('supply-stocktake',{entries:[{supplyId,quantity}],recorder:'測試盤點'});
@@ -95,9 +95,11 @@ test('snack manual consideration flags allow unknown, zero and high stock and su
     let summary=plain(b.ctx.adminSummaryData_());assert.equal(summary.lowItems.some(item=>item.kind==='snack'),quantity!==null&&quantity>0&&quantity<=10);assert.equal(summary.manualSnackItems.length,1);
     assert.deepEqual(summary.manualSnackItems[0],{kind:'snack',id:supplyId,name:'多力多滋',flavor:'香菜',unit:'包',stock:quantity,mode:'consider',markedAt:first.result.updatedAt});
     b.send('supply-arrival',{supplyId,quantity:2,recorder:'測試同事'});
+    assert.equal(plain(b.ctx.adminSummaryData_()).manualSnackItems.length,0);
+    const remarked=b.send('restock-preference',data);assert.equal(remarked.state,'accepted');
     for(const stock of [50,0]){
       b.send('supply-stocktake',{entries:[{supplyId,quantity:stock}],recorder:'測試盤點'});
-      summary=plain(b.ctx.adminSummaryData_());assert.equal(summary.manualSnackItems[0].stock,stock);assert.equal(summary.manualSnackItems[0].markedAt,first.result.updatedAt);
+      summary=plain(b.ctx.adminSummaryData_());assert.equal(summary.manualSnackItems[0].stock,stock);assert.equal(summary.manualSnackItems[0].markedAt,remarked.result.updatedAt);
     }
     assert.equal(b.send('restock-preference',{...data,mode:'normal'}).state,'rejected','stale mode cannot erase a manual mark');
     assert.equal(b.send('restock-preference',{...data,expectedMode:'consider',mode:'normal'}).state,'accepted');

@@ -23,7 +23,7 @@ export function memorySheet(rows = []) {
   };
 }
 
-export function websiteBackend() {
+export function websiteBackend({defaultRecorder='測試管理者'} = {}) {
   const props = new Map();
   const sheets = {
     Catalog: memorySheet([['id','name','category','packaging','unit','case','threshold','active'],
@@ -51,8 +51,10 @@ export function websiteBackend() {
   ctx.renderArchive_ = () => {};
   props.set('HOLDWIN_FORM_FIELDS', JSON.stringify({wishKindEntry:'101',voteWishEntry:'201',voteVoterEntry:'202',voteNameEntry:'203'}));
   ctx.forms_ = () => Object.fromEntries(['stocktake','arrival','wish','vote','product'].map(kind=>[kind,{getPublishedUrl:()=>`https://docs.google.com/forms/d/e/TEST_${kind}/viewform`}]));
-  const send = (operation,data,requestId = id()) => plain(ctx.submitWebsiteRequest_({requestId,operation,data}));
+  // Routine fixtures have a named actor; authentication tests opt out explicitly.
+  const sendRaw=(operation,data,requestId=id())=>plain(ctx.submitWebsiteRequest_({requestId,operation,data}));
+  const send = (operation,data,requestId = id()) => sendRaw(operation,['restock-preference','zero-stock-decision'].includes(operation)&&defaultRecorder!==null&&!Object.hasOwn(data,'recorder')?{...data,recorder:defaultRecorder}:data,requestId);
   const inventory = () => plain(ctx.computeInventory_(ctx.catalog_(ss),ctx.historyEvents_(ss)));
-  return {ctx,ss,sheets,props,send,inventory};
+  return {ctx,ss,sheets,props,send,sendRaw,inventory};
 }
 

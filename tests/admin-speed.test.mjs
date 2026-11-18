@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {websiteBackend,memorySheet} from './helpers/google-website.mjs';
-import {GoogleInventoryStore} from '../js/google-store.js';
+import {NamedGoogleInventoryStore as GoogleInventoryStore} from './helpers/named-stores.mjs';
 const plain=x=>JSON.parse(JSON.stringify(x));
 const storage=()=>{const values=new Map();return{values,getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,value),removeItem:key=>values.delete(key)};};
 const endpoint='https://script.google.com/macros/s/ADMIN_SPEED_TEST/exec';

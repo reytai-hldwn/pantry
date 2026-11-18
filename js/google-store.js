@@ -272,7 +272,7 @@ export function normalizeGooglePublicData(payload, { warehouse = false } = {}) {
     popularityVersion: [1,2,3].includes(payload.websiteEntry?.popularityVersion) ? payload.websiteEntry.popularityVersion : 0,
     websiteEntryVersion: payload.websiteEntry?.version === 1 ? 1 : 0,
     fastReceiptVersion: payload.websiteEntry?.fastReceiptVersion === 1 ? 1 : 0,
-    restockAuthVersion: payload.websiteEntry?.restockAuthVersion === 1 ? 1 : 0,
+    restockAuthVersion: [1,2].includes(payload.websiteEntry?.restockAuthVersion) ? payload.websiteEntry.restockAuthVersion : 0,
     archivedArrivalVersion:warehouse&&payload.websiteEntry?.archivedArrivalVersion===1?1:0,
     batchArrivalVersion:warehouse&&payload.websiteEntry?.batchArrivalVersion===1?1:0,
     newArrivalVersion: warehouse && payload.websiteEntry?.newArrivalVersion === 1 ? 1 : 0,
@@ -305,16 +305,18 @@ export class GoogleInventoryStore {
   #restockCredential = null;
   #popularitySourceSignature = null;
 
-  get requiresRestockAuth() { return this.restockAuthVersion===1; }
+  get requiresRestockAuth() { return true; }
+  get supportsNamedRestock() { return this.restockAuthVersion===2; }
   get hasRestockAuthorization() {
     if(this.#restockCredential?.expiresAt<=this.now())this.#restockCredential=null;
     return !!this.#restockCredential?.verified;
   }
-  setRestockCode(code) {
-    if(typeof code!=='string'||!/^[0-9]{4,12}$/.test(code))throw new Error('請輸入 4–12 位數字認證碼。');
-    this.#restockCredential={code,verified:false,expiresAt:this.now()+30*60*1000};
+  setRestockName(name) {
+    if(typeof name!=='string'||!name.trim()||name.trim().length>80||/[\u0000-\u001f\u007f]/.test(name))throw new Error('請填寫姓名，最多 80 字。');
+    this.#restockCredential={name:name.trim(),verified:false,expiresAt:this.now()+30*60*1000};
   }
-  clearRestockCode() { this.#restockCredential=null; }
+  clearRestockName() { this.#restockCredential=null; }
+  clearRestockCode() { this.clearRestockName(); }
 
   constructor(config = {}, options = {}) {
     this.url = config.googleScriptUrl || '';
@@ -782,11 +784,15 @@ export class GoogleInventoryStore {
     if (!this.supportsWebsiteEntry) throw new Error('請先更新 Google Apps Script 的 Code.gs，並部署新版本，才能直接在網站送出。');
     const endpoint = validateGoogleScriptUrl(this.url),fastRestock=this.fastRestockVersion===1;
     const protectedWrite=['restock-preference','zero-stock-decision'].includes(operation);
-    // Keep the secret out of persisted pending drafts, signatures and receipts.
+    // A name is an audited part of the intent; legacy PINs are never retained.
     if(protectedWrite){data={...data};delete data.restockPin;}
     const credential=protectedWrite?this.#restockCredential:null;
     if(protectedWrite&&this.requiresRestockAuth&&(!credential||credential.expiresAt<=this.now())){
-      this.clearRestockCode();const error=new Error('請輸入認證碼後再儲存補貨設定。');error.code='restock_auth';throw error;
+      this.clearRestockName();const error=new Error('請填寫姓名後再儲存補貨設定。');error.code='restock_auth';throw error;
+    }
+    if(protectedWrite){
+      if(!this.supportsNamedRestock)throw new Error('請更新原 Google 部署，啟用姓名登記補貨設定。');
+      data.recorder=credential.name;
     }
     const key = `holdwin-google-pending-v1:${endpoint}:${operation}`;
     let signature = JSON.stringify(data);
@@ -834,13 +840,13 @@ export class GoogleInventoryStore {
     this.lastWriteNeedsRefresh = false;
     this.stocktakeRefreshPending = false;
     let result;
-    try { result = await this.submitWebsiteCommand(endpoint, { requestId: pending.requestId, operation, data:protectedWrite&&credential?{...data,restockPin:credential.code}:data }, { readReceipt: this.readReceipt, messageReceipt:this.fastReceiptVersion===1 }); }
+    try { result = await this.submitWebsiteCommand(endpoint, { requestId: pending.requestId, operation, data }, { readReceipt: this.readReceipt, messageReceipt:this.fastReceiptVersion===1 }); }
     catch (error) {
       if (['rejected','restock_auth'].includes(error.code)) acknowledge('rejected');
-      if(error.code==='restock_auth'){this.restockAuthVersion=1;this.clearRestockCode();}
+      if(error.code==='restock_auth'){this.restockAuthVersion=2;this.clearRestockName();}
       throw error;
     }
-    if(protectedWrite&&newRequest&&result?.restockAuthVersion===1&&credential&&this.#restockCredential===credential)credential.verified=true;
+    if(protectedWrite&&result?.restockAuthVersion===2&&credential&&result.recorder===credential.name&&this.#restockCredential===credential)credential.verified=true;
     // A confirmed write stays a success even if the following read fails.
     acknowledge('accepted', result);
     this.confirmedWriteSequence += 1;

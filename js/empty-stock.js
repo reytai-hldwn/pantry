@@ -1,19 +1,19 @@
-import { hasRecordedStock, restockPreferenceMode } from './restock-preferences.js';
-
 export function groupEmptyStock(items) {
   const pending=item=>item.mode==='consider'&&item.zeroStockPending===true;
   return { pending:items.filter(pending), undecided:items.filter(item=>!pending(item)) };
 }
 
-/** Only actual arrivals fulfil a zero-stock purchase decision; counts do not. */
+/** Successful positive arrivals fulfil a marked item; counts keep the manual mark. */
 export function fulfilZeroRestocks(previous, next) {
   const oldIds=new Set([...(previous.events||[]),...(previous.supplyEvents||[])].map(event=>event.id));
   const incoming=[...(next.events||[]),...(next.supplyEvents||[])].filter(event=>!oldIds.has(event.id)&&event.type==='restock'&&event.accepted!==false&&event.quantity>0);
-  const fulfilled=new Set();
+  const fulfilled=new Map();
   for(const event of incoming){
-    const kind=event.drinkId?'drink':(previous.supplies||[]).find(item=>item.id===event.supplyId)?.kind;
-    const id=event.drinkId||event.supplyId,old=(kind==='drink'?previous.drinks:previous.supplies||[]).find(item=>item.id===id);
-    if(old&&hasRecordedStock(old)&&old.stock===0&&restockPreferenceMode(previous.restockPreferences||[],kind,id)==='consider'&&(previous.restockPreferences||[]).some(entry=>entry.kind===kind&&entry.itemId===id&&entry.zeroStockPending===true))fulfilled.add(`${kind}:${id}`);
+    const kind=event.drinkId?'drink':(next.supplies||[]).find(item=>item.id===event.supplyId)?.kind;
+    const id=event.drinkId||event.supplyId,item=(kind==='drink'?next.drinks:next.supplies||[]).find(item=>item.id===id);
+    const old=(previous.restockPreferences||[]).find(entry=>entry.kind===kind&&entry.itemId===id);
+    const current=(next.restockPreferences||[]).find(entry=>entry.kind===kind&&entry.itemId===id);
+    if(item?.stock>0&&old?.mode==='consider'&&current?.mode==='consider'&&old.updatedAt===current.updatedAt)fulfilled.set(`${kind}:${id}`,event.recorder);
   }
-  return fulfilled.size?{...next,restockPreferences:(next.restockPreferences||[]).map(entry=>fulfilled.has(`${entry.kind}:${entry.itemId}`)?{kind:entry.kind,itemId:entry.itemId,mode:'normal',updatedAt:new Date().toISOString()}:entry)}:next;
+  return fulfilled.size?{...next,restockPreferences:(next.restockPreferences||[]).map(entry=>fulfilled.has(`${entry.kind}:${entry.itemId}`)?{kind:entry.kind,itemId:entry.itemId,mode:'normal',updatedAt:new Date().toISOString(),recorder:fulfilled.get(`${entry.kind}:${entry.itemId}`)}:entry)}:next;
 }

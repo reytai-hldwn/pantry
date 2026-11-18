@@ -31,11 +31,11 @@ try{for(const width of [1440,390]){
  const frozenWarehouse=async()=>{await go('products');await page.locator('[data-action=warehouse-kind][data-id=frozen]').click();};
  const itemRow=id=>page.locator(`[data-supply-id="${id}"]`);
  await page.goto(base+'/#products');await page.waitForSelector('[data-action=warehouse-kind]');
- assert.equal(await page.locator('[data-action=warehouse-kind]').count(),5);
+ assert.equal(await page.locator('[data-action=warehouse-kind]').count(),6);
  await page.locator('[data-action=warehouse-kind][data-id=frozen]').click();
  await page.locator('a.button[href="#restock-frozen"]').click();
  await page.waitForSelector('#supply-restock-form[data-kind=frozen]');
- assert.equal(await page.locator('.restock-kind-tabs a').count(),5);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+ assert.equal(await page.locator('.restock-kind-tabs a').count(),6);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
  assert.equal(await page.locator('#supply-restock-form [name=expiresOn]').count(),0);
  await page.locator('#supply-restock-form [name=recorder]').fill('虛構冰品登記者');
  await page.locator('#supply-restock-form [name=newName]').fill('虛構香草雪糕');
@@ -47,7 +47,7 @@ try{for(const width of [1440,390]){
  assert.equal(await page.locator('[data-recent-arrivals] .order-card').count(),1);
  await frozenWarehouse();await itemRow(ice.id).waitFor();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));await page.screenshot({path:`/tmp/frozen-warehouse-${width}.png`,fullPage:true});assert.match(await itemRow(ice.id).locator('.stock-value').innerText(),/12/);
  await itemRow(ice.id).locator('[data-restock-toggle]').click();await page.waitForSelector('#restock-auth-form');
- await page.locator('[name=restockCode]').fill('8642');await page.locator('#restock-auth-form [type=submit]').click();
+ await page.locator('[name=restockName]').fill('測試同事');await page.locator('#restock-auth-form [type=submit]').click();
  await page.waitForFunction(()=>!document.querySelector('#modal').open);await done();
  assert.equal(await itemRow(ice.id).locator('[data-restock-toggle]').isChecked(),true);
  await go('count');await page.locator('[data-action=count-kind][data-id=frozen]').click();

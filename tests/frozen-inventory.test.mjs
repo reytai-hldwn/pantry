@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { websiteBackend } from './helpers/google-website.mjs';
-import { GoogleInventoryStore, normalizeGooglePublicData } from '../js/google-store.js';
-import { InventoryStore } from '../js/store.js';
+import {NamedGoogleInventoryStore as GoogleInventoryStore} from './helpers/named-stores.mjs';
+import {normalizeGooglePublicData} from '../js/google-store.js';
+import {NamedInventoryStore as InventoryStore} from './helpers/named-stores.mjs';
 import { FROZEN_UNITS, matchesSupplyInventoryFilter } from '../js/supplies.js';
 import { normalizeInventoryTotals } from '../js/inventory-activity.js';
 
@@ -77,13 +78,13 @@ test('mixed batches count frozen arrivals once and reject every row if another r
   assert.equal(balance(b,saved.result.items[0].id).stock,8);assert.equal(b.inventory()[0].stock,23);
 });
 
-test('manual frozen restock follows the existing PIN and appears in totals and activity without automatic red warnings',async()=>{
+test('manual frozen restock records a name and appears in totals and activity without automatic red warnings',async()=>{
   const b=websiteBackend(),id=b.send('new-arrival',fresh()).result.id;
   assert.equal(b.ctx.adminSummaryData_(true).lowItems.some(i=>i.id===id),false);
   b.props.set('HOLDWIN_RESTOCK_PIN','8642');
   const intent={kind:'frozen',itemId:id,mode:'consider',expectedMode:'normal'};
-  assert.equal(b.send('restock-preference',intent).errorCode,'restock_auth');
-  assert.equal(b.send('restock-preference',{...intent,restockPin:'8642'}).state,'accepted');
+  assert.equal(b.sendRaw('restock-preference',intent).errorCode,'restock_auth');
+  assert.equal(b.send('restock-preference',{...intent,recorder:'測試同事'}).state,'accepted');
   const {store}=client(b);await store.readWarehouse();assert.equal(store.supportsFrozen,true);
   const summary=await store.readAdminSummary({force:true});
   assert.ok(summary.restockItems.some(i=>i.id===id));assert.ok(summary.lowItems.some(i=>i.id===id));

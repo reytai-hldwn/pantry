@@ -45,6 +45,20 @@ export class InventoryStore {
     this.updatedAt = null;
   }
 
+  get requiresRestockAuth() { return this.mode==='demo'; }
+  get supportsNamedRestock() { return this.mode==='demo'; }
+  get hasRestockAuthorization() { return !!this.restockRecorder?.verified&&this.restockRecorder.expiresAt>Date.now(); }
+  setRestockName(name) {
+    if(typeof name!=='string'||!name.trim()||name.trim().length>80||/[\u0000-\u001f\u007f]/.test(name))throw new Error('請填寫姓名，最多 80 字。');
+    this.restockRecorder={name:name.trim(),verified:false,expiresAt:Date.now()+30*60*1000};
+  }
+  clearRestockName() { this.restockRecorder=null; }
+  clearRestockCode() { this.clearRestockName(); }
+  requireRestockRecorder() {
+    if(!this.restockRecorder||this.restockRecorder.expiresAt<=Date.now())throw new Error('請填寫姓名後再儲存補貨設定。');
+    return this.restockRecorder.name;
+  }
+
   get canEdit() { return this.isEditor && !this.preview; }
   get supportsCoffee() { return this.mode === 'demo'; }
   get coffeeReceipts() { return this.data.coffeeReceipts || []; }
@@ -385,9 +399,9 @@ export class InventoryStore {
     const current=restockPreferenceMode(this.restockPreferences,kind,itemId);
     if(expectedMode!==current)throw new Error('其他裝置已更新這個品項的補貨設定，請重新整理。');
     if(kind!=='snack'&&mode!=='normal'&&mode!=='consider'&&current==='normal'&&!isLowStockItem(item))throw new Error('目前庫存未達補貨提醒門檻，請重新整理後確認。');
-    const entry={kind,itemId,mode,updatedAt:new Date().toISOString()},next=structuredClone(this.data);
+    const entry={kind,itemId,mode,recorder:this.requireRestockRecorder(),updatedAt:new Date().toISOString()},next=structuredClone(this.data);
     next.restockPreferences=[...this.restockPreferences.filter(entry=>entry.kind!==kind||entry.itemId!==itemId),entry];
-    await this.save(next);return entry;
+    await this.save(next);this.restockRecorder.verified=true;return entry;
   }
 
   async setZeroStockDecision({kind,itemId,decision,expectedMode}) {
@@ -396,10 +410,10 @@ export class InventoryStore {
     const next=structuredClone(this.data),item=(kind==='drink'?next.drinks:next.supplies||[]).find(item=>item.id===itemId&&(kind==='drink'||item.kind===kind));
     if(!item||(item.active===false&&!item.autoArchived)||item.stock!==0||!(item.lastCountAt||item.lastArrivalAt))throw new Error('這個品項已不在無庫存清單，請重新整理。');
     if(restockPreferenceMode(this.restockPreferences,kind,itemId)!==expectedMode)throw new Error('處理狀態已變更，請重新整理。');
-    const mode=decision==='pending'?'consider':'normal',updatedAt=new Date().toISOString();
+    const mode=decision==='pending'?'consider':'normal',updatedAt=new Date().toISOString(),recorder=this.requireRestockRecorder();
     if(decision==='archive'){item.active=false;item.autoArchived=false;}
-    next.restockPreferences=[...(next.restockPreferences||[]).filter(entry=>entry.kind!==kind||entry.itemId!==itemId),{kind,itemId,mode,updatedAt,...(decision==='pending'?{zeroStockPending:true}:{})}];
-    await this.save(next);return{kind,itemId,decision,mode,active:decision!=='archive',stock:0,snapshotAt:updatedAt};
+    next.restockPreferences=[...(next.restockPreferences||[]).filter(entry=>entry.kind!==kind||entry.itemId!==itemId),{kind,itemId,mode,updatedAt,recorder,...(decision==='pending'?{zeroStockPending:true}:{})}];
+    await this.save(next);this.restockRecorder.verified=true;return{kind,itemId,decision,mode,active:decision!=='archive',stock:0,snapshotAt:updatedAt};
   }
 
   async readGachaOptions() {

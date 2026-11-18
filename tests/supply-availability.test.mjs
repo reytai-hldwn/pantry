@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {websiteBackend} from './helpers/google-website.mjs';
 import {supplyAvailability,normalizeSupplyWarehouse,matchesSupplyInventoryFilter} from '../js/supplies.js';
-import {InventoryStore} from '../js/store.js';
-import {GoogleInventoryStore} from '../js/google-store.js';
+import {NamedInventoryStore as InventoryStore} from './helpers/named-stores.mjs';
+import {NamedGoogleInventoryStore as GoogleInventoryStore} from './helpers/named-stores.mjs';
 const plain=value=>JSON.parse(JSON.stringify(value));
 const date='2026-11-04T01:00:00Z';
 

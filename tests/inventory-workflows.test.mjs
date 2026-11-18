@@ -64,11 +64,11 @@ test('legacy seed names normalize read-only into name and flavor without rewriti
  assert.equal(b.send('new-arrival',{kind:'snack',name:' 多力多滋雙倍起司口味 ',unit:'包',category:'太空包',quantity:1,recorder:'虛構'}).state,'rejected');
 });
 
-test('all categories allow explicit manual flags at high, zero and unknown stock, retaining flags across arrivals',()=>{
+test('all categories allow explicit manual flags at high, zero and unknown stock, clearing a flagged item only when it receives an arrival',()=>{
  const b=websiteBackend(),before=plain(b.sheets.History.rows);
  for(const [kind,itemId] of [['drink','tea'],['snack','supply-snack-01'],['noodle','supply-noodle-01'],['toner','supply-toner-black']])assert.equal(b.send('restock-preference',{kind,itemId,mode:'consider',expectedMode:'normal'}).state,'accepted');
- assert.equal(b.ctx.adminSummaryData_().restockItems.length,4);assert.deepEqual(b.sheets.History.rows,before);b.send('supply-arrival',{supplyId:'supply-snack-01',quantity:30,recorder:'虛構'});assert.equal(b.ctx.adminSummaryData_().restockItems.find(item=>item.id==='supply-snack-01').stock,30);
- assert.equal(b.send('restock-preference',{kind:'drink',itemId:'tea',mode:'normal',expectedMode:'consider'}).state,'accepted');assert.equal(b.ctx.adminSummaryData_().restockItems.length,3);
+ assert.equal(b.ctx.adminSummaryData_().restockItems.length,4);assert.deepEqual(b.sheets.History.rows,before);b.send('supply-arrival',{supplyId:'supply-snack-01',quantity:30,recorder:'虛構'});assert.equal(b.ctx.adminSummaryData_().restockItems.some(item=>item.id==='supply-snack-01'),false);assert.equal(b.ctx.supplyInventory_(b.ctx.supplyCatalog_(b.ss),b.ctx.supplyEvents_(b.ss)).find(item=>item.id==='supply-snack-01').stock,30);
+ assert.equal(b.send('restock-preference',{kind:'drink',itemId:'tea',mode:'normal',expectedMode:'consider'}).state,'accepted');assert.equal(b.ctx.adminSummaryData_().restockItems.length,2);
 });
 
 test('priority sorting puts manually marked items before the numeric order, without mutating the source',()=>{

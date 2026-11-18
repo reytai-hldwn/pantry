@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { websiteBackend } from './helpers/google-website.mjs';
-import { GoogleInventoryStore } from '../js/google-store.js';
-import { InventoryStore } from '../js/store.js';
+import {NamedGoogleInventoryStore as GoogleInventoryStore} from './helpers/named-stores.mjs';
+import {NamedInventoryStore as InventoryStore} from './helpers/named-stores.mjs';
 import { canonicalDrinkCategory, fridgeDisplayName, createCompanyData } from '../js/catalog.js';
 import { initialSupplies } from '../js/supplies.js';
 import { groupEmptyStock } from '../js/empty-stock.js';
@@ -39,7 +39,7 @@ test('archiving only changes the active cell and keeps the original item reusabl
  assert.equal(b.inventory().find(item=>item.drink.id==='tea').stock,3);assert.equal(b.sheets.Catalog.rows.filter(row=>row[0]==='tea').length,1);assert.equal(b.sheets.Catalog.rows.find(row=>row[0]==='tea')[7],true);
 });
 
-test('snack/noodle batch arrivals fulfil only explicit zero-stock queues; manual marks retain their meaning',()=>{
+test('snack/noodle batch arrivals fulfil both zero-stock queues and manual restock marks',()=>{
  const b=websiteBackend(),snack='supply-snack-01',noodle='supply-noodle-01';
  b.send('supply-stocktake',{entries:[{supplyId:snack,quantity:0},{supplyId:noodle,quantity:0}],recorder:'測試'});
  for(const [kind,itemId] of [['snack',snack],['noodle',noodle]])assert.equal(b.send('zero-stock-decision',{kind,itemId,decision:'pending',expectedMode:'normal'}).state,'accepted');
@@ -52,13 +52,13 @@ test('snack/noodle batch arrivals fulfil only explicit zero-stock queues; manual
   assert.equal(b.send('supply-arrival',{supplyId:itemId,restoreArchived:true,quantity:1,recorder:'測試',note:'',...(kind==='noodle'?{expiresOn:'2099-01-01'}:{})}).state,'accepted');
  }
  b.send('supply-stocktake',{entries:[{supplyId:snack,quantity:0}],recorder:'測試'});b.send('restock-preference',{kind:'snack',itemId:snack,mode:'consider',expectedMode:'normal'});
- b.send('supply-arrival',{supplyId:snack,quantity:2,recorder:'測試',note:''});assert.equal(b.ctx.restockMode_(b.ctx.restockPreferences_(b.ss),'snack',snack),'consider');
+ b.send('supply-arrival',{supplyId:snack,quantity:2,recorder:'測試',note:''});assert.equal(b.ctx.restockMode_(b.ctx.restockPreferences_(b.ss),'snack',snack),'normal');
 });
 
 test('unknown/positive stock, toner and changed stocks are rejected before availability changes',()=>{
  const b=websiteBackend();
  for(const data of [{kind:'drink',itemId:'tea'},{kind:'snack',itemId:'supply-snack-01'},{kind:'toner',itemId:'supply-toner-black'}])assert.equal(b.send('zero-stock-decision',{...data,decision:'archive',expectedMode:'normal'}).state,'rejected');
- zero(b);const request={operation:'zero-stock-decision',requestId:randomUUID(),data:{kind:'drink',itemId:'tea',decision:'archive',expectedMode:'normal'}};
+ zero(b);const request={operation:'zero-stock-decision',requestId:randomUUID(),data:{kind:'drink',itemId:'tea',decision:'archive',expectedMode:'normal',recorder:'測試同事'}};
  const effects=b.ctx.prepareWebsiteRequest_(b.ss,request,new Date().toISOString());b.send('arrival',{drinkId:'tea',cases:0,loose:2,recorder:'測試',note:''});
  assert.throws(()=>b.ctx.applyWebsiteRequest_(b.ss,effects),/無庫存清單/);assert.equal(b.inventory().find(item=>item.drink.id==='tea').stock,2);assert.equal(b.sheets.Catalog.rows.find(row=>row[0]==='tea')[7],true);
  const c=websiteBackend();zero(c);const prepared=c.ctx.prepareWebsiteRequest_(c.ss,{...request,requestId:randomUUID()},new Date().toISOString());zero(c);

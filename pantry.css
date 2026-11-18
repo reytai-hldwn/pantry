@@ -308,3 +308,16 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
   .coffee-inventory-table td[data-label]:before{content:attr(data-label);display:block;margin-bottom:6px;font-size:11px;color:#927b63}
   .coffee-inventory-table .inline-actions{display:flex;flex-wrap:wrap;gap:8px}
 }
+
+/* One snack product heading, independent flavor rows and controls. */
+.snack-product-group .supply-col-name{vertical-align:top;padding-top:22px}
+.snack-flavor-label{display:inline-block;margin:0 14px 7px 0;color:#60432e;font-size:13px;line-height:1.7}
+.snack-flavor-row .stock-value{display:inline-flex;align-items:baseline;gap:4px;vertical-align:baseline}
+.snack-product-group+.snack-product-group{border-top:2px solid #e8dac7}
+@media(max-width:900px){
+  #supply-inventory .snack-product-group{border:1px solid #e9dfd3;border-radius:12px;margin-bottom:14px;overflow:hidden}
+  #supply-inventory .snack-product-group .supply-col-name{padding-top:0;margin-bottom:5px}
+  #supply-inventory .snack-product-group tr:last-child{border-bottom:0}
+  #supply-inventory .snack-product-group .supply-col-stock:before{content:'口味與紀錄數量'}
+  #supply-inventory .snack-product-group .supply-col-stock .restock-control{margin-top:5px}
+}

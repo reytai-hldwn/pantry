@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {InventoryStore} from '../js/store.js';
-import {GoogleInventoryStore,normalizeGooglePublicData} from '../js/google-store.js';
+import {NamedInventoryStore as InventoryStore} from './helpers/named-stores.mjs';
+import {NamedGoogleInventoryStore as GoogleInventoryStore} from './helpers/named-stores.mjs';
+import {normalizeGooglePublicData} from '../js/google-store.js';
 import {SNACK_CATEGORIES,SNACK_UNITS,SUPPLY_CATALOG,initialSupplies,normalizeSupplyWarehouse,prepareSupplyCatalog,supplyBatches,supplyHasUntrackedExpiry,supplyNeedsExpiry,supplySupportsExpiryHistory} from '../js/supplies.js';
 import {normalizeRestockPreferences} from '../js/restock-preferences.js';
 import {createCompanyData} from '../js/catalog.js';
@@ -58,8 +59,8 @@ test('local snack arrivals/new products need no date, preserve optional old date
  const withLegacy=structuredClone(store.data);withLegacy.restockPreferences=[{kind:'snack',itemId:snack.id,mode:'hold',updatedAt:'2026-01-01T00:00:00Z'}];await store.save(withLegacy);
  await store.setRestockPreference({kind:'snack',itemId:snack.id,mode:'normal',expectedMode:'hold'});assert.equal(store.restockPreferences[0].mode,'normal');
  await store.setRestockPreference({kind:'snack',itemId:created.id,mode:'consider',expectedMode:'normal'});assert.equal(store.restockPreferences.find(pref=>pref.itemId===created.id).mode,'consider');
- await store.submitSupplyStocktake([{supplyId:created.id,quantity:42}],'同事');await store.submitSupplyArrival({supplyId:created.id,quantity:3,recorder:'同事'});assert.equal(store.supplies.find(item=>item.id===created.id).stock,45);assert.equal(store.restockPreferences.find(pref=>pref.itemId===created.id).mode,'consider');
- await store.setRestockPreference({kind:'snack',itemId:created.id,mode:'normal',expectedMode:'consider'});assert.equal(store.restockPreferences.find(pref=>pref.itemId===created.id).mode,'normal');
+ await store.submitSupplyStocktake([{supplyId:created.id,quantity:42}],'同事');assert.equal(store.restockPreferences.find(pref=>pref.itemId===created.id).mode,'consider');await store.submitSupplyArrival({supplyId:created.id,quantity:3,recorder:'同事'});assert.equal(store.supplies.find(item=>item.id===created.id).stock,45);assert.equal(store.restockPreferences.find(pref=>pref.itemId===created.id).mode,'normal');
+ await store.setRestockPreference({kind:'snack',itemId:created.id,mode:'normal',expectedMode:'normal'});assert.equal(store.restockPreferences.find(pref=>pref.itemId===created.id).mode,'normal');
  assert.equal((await store.setRestockPreference({kind:'noodle',itemId:'supply-noodle-01',mode:'consider',expectedMode:'normal'})).mode,'consider');
 });
 

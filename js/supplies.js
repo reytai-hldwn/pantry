@@ -44,6 +44,17 @@ export function initialSupplies() {
 }
 
 export const supplyLabel = item => item.flavor ? `${item.name}｜${item.flavor}` : item.name;
+/** Group presentation only; every flavor retains its original product ID and balance. */
+export function groupSnackItems(items) {
+  const groups=new Map();
+  for(const item of items){
+    const key=item.name.trim().normalize('NFKC').toLowerCase();
+    if(!groups.has(key))groups.set(key,{key,name:item.name,items:[]});
+    groups.get(key).items.push(item);
+  }
+  return [...groups.values()];
+}
+
 export function supplyNameKey(item) { const aliases={'多力多滋雙倍起司口味':['多力多滋','超濃起司'],'多力多滋香菜口味':['多力多滋','香菜'],'樂事海苔口味':['樂事','海苔'],'華元蚵仔煎':['華元洋芋片','蚵仔煎'],'華元辣蚵仔煎':['華元洋芋片','辣蚵仔煎']},alias=Object.hasOwn(aliases,item.name.trim().normalize('NFKC').toLowerCase())?aliases[item.name.trim().normalize('NFKC').toLowerCase()]:null;if(!item.flavor&&alias)item={name:alias[0],flavor:alias[1]};return `${item.name.trim().normalize('NFKC').toLowerCase()}\u0000${(item.flavor||'').trim().normalize('NFKC').toLowerCase()}`; }
 
 /** Upgrade local previews once without changing any observed stock/history. */

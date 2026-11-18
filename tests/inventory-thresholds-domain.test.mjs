@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { InventoryStore } from '../js/store.js';
-import { GoogleInventoryStore, normalizeGooglePublicData } from '../js/google-store.js';
+import {NamedInventoryStore as InventoryStore} from './helpers/named-stores.mjs';
+import {NamedGoogleInventoryStore as GoogleInventoryStore} from './helpers/named-stores.mjs';
+import {normalizeGooglePublicData} from '../js/google-store.js';
 import { SNACK_CATEGORIES, initialSupplies, normalizeSupplyWarehouse } from '../js/supplies.js';
 import { inventoryLowThreshold, isLowStockItem, isOutOfStockItem, matchesInventoryStockFilter, restockPreferenceMode, restockThreshold, sortInventoryItems } from '../js/restock-preferences.js';
 
