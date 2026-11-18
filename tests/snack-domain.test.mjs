@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {NamedInventoryStore as InventoryStore} from './helpers/named-stores.mjs';
-import {NamedGoogleInventoryStore as GoogleInventoryStore} from './helpers/named-stores.mjs';
-import {normalizeGooglePublicData} from '../js/google-store.js';
+import {NamedGoogleInventoryStore} from './helpers/named-stores.mjs';
+import {GoogleInventoryStore,normalizeGooglePublicData} from '../js/google-store.js';
 import {SNACK_CATEGORIES,SNACK_UNITS,SUPPLY_CATALOG,initialSupplies,normalizeSupplyWarehouse,prepareSupplyCatalog,supplyBatches,supplyHasUntrackedExpiry,supplyNeedsExpiry,supplySupportsExpiryHistory} from '../js/supplies.js';
 import {normalizeRestockPreferences} from '../js/restock-preferences.js';
 import {createCompanyData} from '../js/catalog.js';
@@ -65,14 +65,14 @@ test('local snack arrivals/new products need no date, preserve optional old date
 });
 
 test('ordinary supply capability on older Google deployments cannot send any snack mutation',async()=>{
- let writes=0;const store=new GoogleInventoryStore({googleScriptUrl:endpoint},{submitWebsiteCommand:async()=>{writes++;return{};}});store.websiteEntryVersion=store.supplyEntryVersion=store.supplyExpiryVersion=store.supplyExpirySetVersion=store.newArrivalVersion=store.restockPreferenceVersion=1;
+ let writes=0;const store=new NamedGoogleInventoryStore({googleScriptUrl:endpoint},{submitWebsiteCommand:async()=>{writes++;return{};}});store.websiteEntryVersion=store.supplyEntryVersion=store.supplyExpiryVersion=store.supplyExpirySetVersion=store.newArrivalVersion=store.restockPreferenceVersion=1;
  store.supplies=[{id:'supply-snack-01',kind:'snack'}];store.supplyEvents=[{id:'snack-batch',supplyId:'supply-snack-01'}];
  const calls=[()=>store.submitNewArrival({kind:'snack',category:'太空包',unit:'包',expiresOn:'2099-12-31'}),()=>store.submitSupplyArrival({supplyId:'supply-snack-01',quantity:2,expiresOn:'2099-12-31'}),()=>store.submitSupplyStocktake([{supplyId:'supply-snack-01',quantity:2}],'同事'),()=>store.closeSupplyBatch({batchId:'snack-batch'}),()=>store.setSupplyExpiry({supplyId:'supply-snack-01'}),()=>store.setRestockPreference({kind:'snack',itemId:'supply-snack-01'})];
  for(const call of calls)await assert.rejects(call(),/零食/);assert.equal(writes,0);assert.equal(store.supportsSnacks,false);
 });
 
 test('Google snack reads expose explicit capability and validated dated writes without caching warehouse observations',async()=>{
- const b=websiteBackend(),publicStorage=storage(),store=new GoogleInventoryStore({googleScriptUrl:endpoint},{publicStorage,pendingStorage:storage(),createRequestId:()=>crypto.randomUUID(),readPublicData:async(_url,{action})=>plain(action==='warehouse'?b.ctx.warehouseData_():b.ctx.publicData_()),submitWebsiteCommand:async(_url,request)=>b.send(request.operation,request.data,request.requestId).result});
+ const b=websiteBackend(),publicStorage=storage(),store=new NamedGoogleInventoryStore({googleScriptUrl:endpoint},{publicStorage,pendingStorage:storage(),createRequestId:()=>crypto.randomUUID(),readPublicData:async(_url,{action})=>plain(action==='warehouse'?b.ctx.warehouseData_():b.ctx.publicData_()),submitWebsiteCommand:async(_url,request)=>b.send(request.operation,request.data,request.requestId).result});
  await store.init();await store.readWarehouse();assert.equal(store.supportsSnacks,true);
  const before=b.sheets.SupplyHistory?.rows.length||0;await assert.rejects(store.submitNewArrival({kind:'snack',name:'新零食',category:'不正確',unit:'包',quantity:2,expiresOn:'2099-12-31',recorder:'同事'}),/分類/);assert.equal(b.sheets.SupplyHistory?.rows.length||0,before);
  const created=await store.submitNewArrival({kind:'snack',name:'新零食',category:'其他鹹食',unit:'包',quantity:2,recorder:'同事'});assert.equal(store.supplies.find(item=>item.id===created.id).category,'其他鹹食');
@@ -84,7 +84,7 @@ test('Google snack reads expose explicit capability and validated dated writes w
 test('unmarked snacks stay out of low-stock summaries while manual consideration remains explicit',async()=>{
  const data=payload(),snack=data.supplies.find(item=>item.kind==='snack');snack.stock=2;snack.lastCountAt='2026-01-01T00:00:00Z';
  let action='admin',writes=0;
- const store=new GoogleInventoryStore({googleScriptUrl:endpoint},{pendingStorage:storage(),createRequestId:()=>crypto.randomUUID(),readPublicData:async(_url,parameters)=>{
+ const store=new NamedGoogleInventoryStore({googleScriptUrl:endpoint},{pendingStorage:storage(),createRequestId:()=>crypto.randomUUID(),readPublicData:async(_url,parameters)=>{
   if(parameters.action==='admin')return action==='legacy'?{ok:false,error:'unsupported_action'}:{ok:true,version:1,totalDrinks:0,pendingWishes:0,manualSnackItems:[{id:snack.id,name:snack.name,kind:'snack',unit:'包',stock:null,mode:'consider',markedAt:'2026-01-01T00:00:00Z'}],lowItems:[{id:snack.id,name:snack.name,kind:'snack',unit:'包',stock:2,mode:'normal'},{id:'tea',name:'茶',kind:'drink',unit:'瓶',stock:3,mode:'normal'}]};
   return structuredClone(data);
  },submitWebsiteCommand:async()=>{writes++;return{};}});
@@ -95,20 +95,44 @@ test('unmarked snacks stay out of low-stock summaries while manual consideration
 
 
 test('policy and manual capabilities independently gate date-less snack writes while old stock counts remain available',async()=>{
- const data=payload();delete data.supplyEntry.snackPolicyVersion;delete data.restockPreferenceEntry.snackManualVersion;let writes=0;
- const store=new GoogleInventoryStore({googleScriptUrl:endpoint},{pendingStorage:storage(),createRequestId:()=>crypto.randomUUID(),readPublicData:async()=>structuredClone(data),submitWebsiteCommand:async()=>{writes++;return{};}});
- await store.readWarehouse();assert.equal(store.supportsSnacks,true);assert.equal(store.supportsSnackNoExpiry,false);assert.equal(store.supportsSnackRestockFlags,false);
- await store.submitSupplyStocktake([{supplyId:'supply-snack-01',quantity:3}],'同事');assert.equal(writes,1);
- await assert.rejects(store.submitSupplyArrival({supplyId:'supply-snack-01',quantity:2,recorder:'同事'}),/免填效期/);await assert.rejects(store.submitNewArrival({kind:'snack',name:'新點心',category:'其他甜食',unit:'包',quantity:2,recorder:'同事'}),/免填效期/);await assert.rejects(store.setRestockPreference({kind:'snack',itemId:'supply-snack-01',mode:'consider',expectedMode:'normal'}),/手動補貨/);assert.equal(writes,1);
- data.supplyEntry.snackPolicyVersion=2;data.restockPreferenceEntry.snackManualVersion=1;await store.readWarehouse();assert.equal(store.supportsSnackNoExpiry,true);assert.equal(store.supportsSnackRestockFlags,true);
- await store.submitSupplyArrival({supplyId:'supply-snack-01',quantity:2,recorder:'同事'});await store.setRestockPreference({kind:'snack',itemId:'supply-snack-01',mode:'consider',expectedMode:'normal'});assert.equal(writes,3);
- const before=writes;await assert.rejects(store.submitSupplyArrival({supplyId:'supply-snack-01',quantity:2,recorder:'同事',expiresOn:'2026-02-30'}),/格式/);assert.equal(writes,before);
+ const data=payload();delete data.supplyEntry.snackPolicyVersion;delete data.restockPreferenceEntry.snackManualVersion;const posts=[],pending=storage();
+ // Use the real store here: a pre-named fixture would hide the name requirement.
+ const store=new GoogleInventoryStore({googleScriptUrl:endpoint},{pendingStorage:pending,createRequestId:()=>crypto.randomUUID(),readPublicData:async()=>structuredClone(data),submitWebsiteCommand:async(_url,command)=>{posts.push(command);return {operation:command.operation,...command.data,...(command.operation==='restock-preference'?{restockAuthVersion:2}:{})};}});
+ const preference={kind:'snack',itemId:'supply-snack-01',mode:'consider',expectedMode:'normal'};
+ await store.readWarehouse();assert.equal(store.supportsSnacks,true);assert.equal(store.supportsSnackNoExpiry,false);assert.equal(store.supportsSnackRestockFlags,false);assert.equal(store.supportsNamedRestock,true);assert.equal(store.hasRestockAuthorization,false);
+ await store.submitSupplyStocktake([{supplyId:'supply-snack-01',quantity:3}],'同事');assert.equal(posts.length,1,'older stock counts do not require the new restock name');
+ await assert.rejects(store.submitSupplyArrival({supplyId:'supply-snack-01',quantity:2,recorder:'同事'}),/免填效期/);await assert.rejects(store.submitNewArrival({kind:'snack',name:'新點心',category:'其他甜食',unit:'包',quantity:2,recorder:'同事'}),/免填效期/);await assert.rejects(store.setRestockPreference(preference),/手動補貨/);assert.equal(posts.length,1);
+ // The no-expiry policy permits arrivals without granting manual-restock support.
+ data.supplyEntry.snackPolicyVersion=2;await store.readWarehouse();assert.equal(store.supportsSnackNoExpiry,true);assert.equal(store.supportsSnackRestockFlags,false);
+ await store.submitSupplyArrival({supplyId:'supply-snack-01',quantity:2,recorder:'同事'});await assert.rejects(store.setRestockPreference(preference),/手動補貨/);assert.equal(posts.length,2);
+ // Manual restock support is independent of the arrival policy, and still needs a name.
+ delete data.supplyEntry.snackPolicyVersion;data.restockPreferenceEntry.snackManualVersion=1;await store.readWarehouse();assert.equal(store.supportsSnackNoExpiry,false);assert.equal(store.supportsSnackRestockFlags,true);
+ await assert.rejects(store.submitSupplyArrival({supplyId:'supply-snack-01',quantity:2,recorder:'同事'}),/免填效期/);await assert.rejects(store.setRestockPreference(preference),error=>error.code==='restock_auth');assert.equal(posts.length,2);assert.equal(pending.values.size,0,'blocked writes leave no pending request');
+ store.setRestockName('零食補貨測試員');await store.setRestockPreference(preference);assert.equal(posts.length,3);assert.equal(posts.at(-1).data.recorder,'零食補貨測試員');assert.equal(posts.at(-1).data.restockPin,undefined);assert.equal(store.hasRestockAuthorization,true);
+ data.supplyEntry.snackPolicyVersion=2;await store.readWarehouse();const before=posts.length;await assert.rejects(store.submitSupplyArrival({supplyId:'supply-snack-01',quantity:2,recorder:'同事',expiresOn:'2026-02-30'}),/格式/);assert.equal(posts.length,before);
  for(const kind of ['drink','noodle','toner'])assert.equal(normalizeRestockPreferences({restockPreferenceEntry:{version:1},restockPreferences:[{kind,itemId:'test',mode:'consider',updatedAt:'2026-01-01T00:00:00Z'}]}).restockPreferences[0].mode,'consider');
+});
+
+test('snack names do not bypass missing or legacy restock capabilities, while old counts remain writable',async t=>{
+ for(const version of [undefined,0,1])await t.test(version===undefined?'missing auth capability':`auth version ${version}`,async()=>{
+  const data=payload(),posts=[],pending=storage(),preference={kind:'snack',itemId:'supply-snack-01',mode:'consider',expectedMode:'normal'};
+  if(version===undefined)delete data.websiteEntry.restockAuthVersion;else data.websiteEntry.restockAuthVersion=version;
+  data.restockPreferences=[{kind:'snack',itemId:preference.itemId,mode:'hold',updatedAt:'2026-01-01T00:00:00Z'}];
+  const store=new GoogleInventoryStore({googleScriptUrl:endpoint},{pendingStorage:pending,readPublicData:async()=>structuredClone(data),submitWebsiteCommand:async(_url,command)=>{posts.push(command);return {operation:command.operation,...command.data,...(command.operation==='restock-preference'?{restockAuthVersion:2}:{})};}});
+  await store.readWarehouse();store.setRestockName('測試管理者');assert.equal(store.supportsSnackRestockFlags,true);assert.equal(store.supportsNamedRestock,false);assert.equal(store.restockPreferences[0].mode,'hold','legacy preferences remain readable');
+  for(const mode of ['consider','normal'])await assert.rejects(store.setRestockPreference({...preference,mode,expectedMode:'hold'}),/更新原 Google 部署/);
+  assert.equal(posts.length,0);assert.equal(pending.values.size,0);
+  await store.submitSupplyStocktake([{supplyId:preference.itemId,quantity:3}],'同事');assert.equal(posts.length,1);assert.equal(posts[0].operation,'supply-stocktake');
+  data.websiteEntry.restockAuthVersion=2;await store.readWarehouse();await store.setRestockPreference({...preference,expectedMode:'hold'});assert.equal(posts.length,2);assert.equal(posts.at(-1).data.recorder,'測試管理者');assert.equal(store.hasRestockAuthorization,true);
+  // A remembered name cannot authorize a subsequently read older deployment.
+  if(version===undefined)delete data.websiteEntry.restockAuthVersion;else data.websiteEntry.restockAuthVersion=version;
+  await store.readWarehouse();assert.equal(store.supportsNamedRestock,false);await assert.rejects(store.setRestockPreference({...preference,mode:'normal',expectedMode:'hold'}),/更新原 Google 部署/);assert.equal(posts.length,2);
+ });
 });
 
 test('manual snack summaries default empty for old deployments and reject malformed or duplicate rows',async()=>{
  const valid={kind:'snack',id:'supply-snack-01',name:'測試零食',unit:'包',stock:null,mode:'consider',markedAt:'2026-01-01T00:00:00Z'},base={ok:true,version:1,totalDrinks:0,pendingWishes:0,lowItems:[]};
- const store=new GoogleInventoryStore({googleScriptUrl:endpoint},{readPublicData:async()=>structuredClone(base)});assert.deepEqual((await store.readAdminSummary()).manualSnackItems,[]);
+ const store=new NamedGoogleInventoryStore({googleScriptUrl:endpoint},{readPublicData:async()=>structuredClone(base)});assert.deepEqual((await store.readAdminSummary()).manualSnackItems,[]);
  for(const change of [{kind:'noodle'},{mode:'hold'},{stock:-1},{stock:1.5},{unit:'杯'},{markedAt:'bad-date'}]){store.adminSummaryReadAt=-Infinity;store.readPublicData=async()=>({...base,manualSnackItems:[{...valid,...change}]});await assert.rejects(store.readAdminSummary(),/手動補貨摘要/);}
  store.readPublicData=async()=>({...base,manualSnackItems:[valid,valid]});await assert.rejects(store.readAdminSummary(),/重複/);
 });
