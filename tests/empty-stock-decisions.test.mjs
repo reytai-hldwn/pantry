@@ -81,7 +81,7 @@ test('a failed generated view can replay an already-applied archive without chan
 test('admin decisions use a verified receipt without requesting the full warehouse and remain visible on another device',async()=>{
  const b=websiteBackend();b.send('supply-stocktake',{entries:[{supplyId:'supply-noodle-01',quantity:0}],recorder:'測試'});const reads=[];
  const make=()=>new GoogleInventoryStore({googleScriptUrl:'https://script.google.com/macros/s/ZERO_STOCK_TEST/exec'},{pendingStorage:storage(),publicStorage:storage(),readPublicData:async(_,options)=>{reads.push(options.action);return plain(b.ctx.adminSummaryData_());},submitWebsiteCommand:async(_,command)=>{const receipt=b.send(command.operation,command.data,command.requestId);assert.equal(receipt.state,'accepted');return receipt.result;}});
- const store=make();await store.readAdminSummary();assert.equal(store.supportsZeroStockDecisions,true);
+ const store=make();await store.readAdminSummary();assert.equal(store.supportsZeroStockDecisions,true);assert.equal(store.supportsNamedRestock,true);
  await store.setZeroStockDecision({kind:'noodle',itemId:'supply-noodle-01',decision:'pending',expectedMode:'normal'});assert.deepEqual(reads,['admin']);assert.equal(store.adminSummary.outOfStockItems.find(item=>item.id==='supply-noodle-01').zeroStockPending,true);
  const other=make();await other.readAdminSummary();assert.equal(other.adminSummary.outOfStockItems.find(item=>item.id==='supply-noodle-01').zeroStockPending,true);
  await store.setZeroStockDecision({kind:'noodle',itemId:'supply-noodle-01',decision:'archive',expectedMode:'consider'});assert.ok(!store.adminSummary.outOfStockItems.some(item=>item.id==='supply-noodle-01'));assert.deepEqual(reads,['admin','admin']);

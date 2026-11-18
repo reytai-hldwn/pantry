@@ -4440,6 +4440,10 @@ class GoogleInventoryStore {
         if(items.some(item=>item.type!=='count'||item.kind!==group.kind||item.createdAt!==countedAt))throw new Error('盤點摘要內容不一致。');return {kind:group.kind,countedAt,items};
       });
       this.zeroStockVersion=value.zeroStockVersion===1?1:0;
+      if(value.restockAuthVersion!==undefined){
+        if(![0,1,2].includes(value.restockAuthVersion))throw new Error('補貨姓名登記版本不正確。');
+        this.restockAuthVersion=value.restockAuthVersion;
+      }
       if(this.zeroStockVersion===1)this.websiteEntryVersion=1;
       this.adminSummary={inventoryTotalsVersion:value.inventoryTotalsVersion===1?1:0,inventoryTotals:value.inventoryTotalsVersion===1?normalizeInventoryTotals(value.inventoryTotals):[],totalDrinks:value.totalDrinks,pendingWishes:value.pendingWishes,lowItems,outOfStockItems,manualSnackItems,restockItems:marked,activityVersion:value.activityVersion===1?1:0,recentArrivals,recentCounts,snapshotAt:googleDateField(value.snapshotAt,'摘要時間',true)};this.adminSummaryReadAt=this.now();
       return this.adminSummary;

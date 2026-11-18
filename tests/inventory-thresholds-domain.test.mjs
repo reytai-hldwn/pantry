@@ -27,7 +27,7 @@ function warehousePayload() {
     ok:true,provider:'google',drinks:[],wishes:[],events:[],lastInventoryAt:null,
     formUrls:{wish:'https://docs.google.com/forms/d/e/THRESHOLD_WISH/viewform'},
     adminUrl:'https://docs.google.com/spreadsheets/d/THRESHOLD_SHEET/edit',
-    websiteEntry:{version:1,newArrivalVersion:1},
+    websiteEntry:{version:1,newArrivalVersion:1,restockAuthVersion:2},
     supplyEntry:{version:1,snackVersion:1,snackPolicyVersion:2,expiryVersion:1,expirySetVersion:1},
     restockPreferenceEntry:{version:1,snackManualVersion:1},
     supplies:initialSupplies(),supplyEvents:[],restockPreferences:[],
