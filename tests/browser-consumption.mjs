@@ -19,7 +19,14 @@ try{for(const width of [1440,390]){
  for(const [id,first,last,start,end]of [['a',50,22,14,7],['b',30,9,14,7],['c',20,6,14,7],['empty',0,0,14,7],['unused',3,3,14,7],['old',60,11,60,53]])for(const [suffix,days,quantity]of [['first',start,first],['last',end,last]])b.sheets.History.rows.push([`${id}-${suffix}`,ago(days),'count',id,id,quantity,'測試區間','測試人','採計']);
  b.ctx.ensureSupplyStorage_(b.ss);
  for(const [id,first,last]of [['supply-snack-01',20,6],['supply-snack-02',12,5]])for(const [suffix,days,quantity]of [['first',14,first],['last',7,last]])b.sheets.SupplyHistory.rows.push([`${id}-${suffix}`,ago(days),'count',id,id,quantity,'測試區間','測試人','採計','','']);
- const original=structuredClone({catalog:b.sheets.Catalog.rows,history:b.sheets.History.rows,supplies:b.sheets.SupplyHistory.rows});
+ b.sheets.SupplyCatalog.rows.push(
+  ['fixture-ice-stick','測試香草雪糕','frozen','支',true],['fixture-ice-cup','測試冰淇淋杯','frozen','杯',true],
+  ['fixture-ice-once','測試單次盤點冰品','frozen','支',true],['fixture-ice-arrival','測試僅入庫冰品','frozen','杯',true],['fixture-ice-old','測試歷史雪糕','frozen','支',false]);
+ for(const [id,first,arrived,last]of [['fixture-ice-stick',20,5,8],['fixture-ice-cup',15,3,8],['fixture-ice-old',40,0,5],['supply-noodle-01',20,5,6],['supply-noodle-02',12,1,6]]){
+  for(const [suffix,days,type,quantity]of [['first',14,'count',first],['arrival',10,'restock',arrived],['last',7,'count',last]])if(type==='count'||quantity>0)b.sheets.SupplyHistory.rows.push([`${id}-${suffix}`,ago(days),type,id,id,quantity,'虛構測試紀錄','測試人','採計','','']);
+ }
+ b.sheets.SupplyHistory.rows.push(['ice-once',ago(7),'count','fixture-ice-once','測試單次盤點冰品',20,'','測試人','採計','',''],['ice-arrival',ago(7),'restock','fixture-ice-arrival','測試僅入庫冰品',100,'','測試人','採計','','']);
+ const original=structuredClone({catalog:b.sheets.Catalog.rows,history:b.sheets.History.rows,supplyCatalog:b.sheets.SupplyCatalog.rows,supplies:b.sheets.SupplyHistory.rows});
  const context=await browser.newContext({viewport:{width,height:960},reducedMotion:'reduce'}),page=await context.newPage(),reads=[],writes=[],errors=[];
  page.on('pageerror',error=>errors.push(error.message));await page.addInitScript(()=>{
   const now=Date.now,interval=window.setInterval;window.__rankingClockOffset=0;Date.now=()=>now()+window.__rankingClockOffset;
@@ -28,7 +35,7 @@ try{for(const width of [1440,390]){
  await page.route('**/config.js',route=>route.fulfill({contentType:'application/javascript',body:`window.DRINKS_CONFIG=${JSON.stringify({provider:'google',googleScriptUrl:endpoint})};`}));
  await page.route(`${endpoint}**`,route=>{if(route.request().method()!=='GET'){writes.push(route.request().method());return route.abort();}const parameter=Object.fromEntries(new URL(route.request().url()).searchParams);reads.push(parameter.action);return route.fulfill({contentType:'application/javascript',body:b.ctx.doGet({parameter}).body});});
  await page.goto(base+'/#consumption');await page.waitForSelector('[data-ranking-item]');
- assert.deepEqual(await page.locator('[data-action=ranking-kind]').evaluateAll(nodes=>nodes.map(node=>node.dataset.id)),['drink','snack']);
+ assert.deepEqual(await page.locator('[data-action=ranking-kind]').evaluateAll(nodes=>nodes.map(node=>node.dataset.id)),['drink','snack','frozen','noodle']);
  const ids=()=>page.locator('[data-ranking-item]').evaluateAll(nodes=>nodes.map(node=>node.dataset.rankingItem));
  assert.deepEqual(await ids(),['a','b','c']);assert.equal(await page.locator('[data-ranking-filter=unit]').inputValue(),'*');assert.equal(await page.locator('[data-ranking-filter=days]').inputValue(),'30');assert.match(await page.locator('.ranking-period').innerText(),/最近 30 天.*滾動統計/s);assert.equal(await page.locator('.ranking-winner').count(),3);assert.match(await page.locator('.ranking-winner').first().innerText(),/換算每工作週/);assert.match(await page.locator('.ranking-observation').first().innerText(),/觀察 5 個工作日 · 消耗 28 包/);
  await page.locator('[data-ranking-item=a] .ranking-evidence>summary').focus();await page.keyboard.press('Enter');assert.match(await page.locator('[data-ranking-item=a] .ranking-intervals').innerText(),/盤點 50 ＋入庫 0 −盤點 22 ＝ 28 包/);
@@ -39,11 +46,20 @@ try{for(const width of [1440,390]){
  await page.locator('[data-ranking-filter=days]').selectOption('90');await page.locator('[data-ranking-filter=archived]').check();assert.deepEqual(await ids(),['old','a','b','c']);await page.locator('[data-ranking-filter=days]').selectOption('30');assert.deepEqual(await ids(),['a','b','c']);
  await page.locator('[data-action=ranking-kind][data-id=snack]').click();assert.deepEqual(await ids(),['supply-snack-01','supply-snack-02']);await page.locator('#ranking-search').fill('超濃起司');assert.deepEqual(await ids(),['supply-snack-01']);await page.locator('.ranking-evidence>summary').click();assert.match(await page.locator('.ranking-flavors').innerText(),/香菜/);
  await page.screenshot({path:`/tmp/consumption-flavors-${width}.png`,fullPage:true});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+ await page.locator('[data-action=ranking-kind][data-id=frozen]').click();assert.deepEqual(await ids(),['fixture-ice-old','fixture-ice-stick']);await page.locator('[data-ranking-filter=archived]').uncheck();assert.deepEqual(await ids(),['fixture-ice-stick']);assert.equal(await page.locator('[data-ranking-filter=unit]').inputValue(),'支');assert.match(await page.locator('.ranking-item-icon').first().innerText(),/🍦/);
+ await page.locator('.ranking-waiting>summary').click();assert.match(await page.locator('.ranking-waiting').innerText(),/測試單次盤點冰品.*等待下次盤點/s);
+ await page.locator('[data-ranking-filter=unit]').selectOption('杯');assert.deepEqual(await ids(),['fixture-ice-cup']);assert.match(await page.locator('.ranking-row-rate').innerText(),/10.*杯／工作週/s);await page.locator('.ranking-waiting>summary').click();assert.match(await page.locator('.ranking-waiting').innerText(),/測試僅入庫冰品.*尚未實際盤點/s);
+ await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:`/tmp/consumption-frozen-${width}.png`,fullPage:true});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+ await page.locator('[data-action=ranking-kind][data-id=noodle]').click();assert.equal(await page.locator('[data-ranking-filter=unit]').inputValue(),'杯');assert.deepEqual(await ids(),['supply-noodle-01']);assert.match(await page.locator('.ranking-row-rate').innerText(),/19.*杯／工作週/s);assert.match(await page.locator('.ranking-item-icon').first().innerText(),/🍜/);
+ await page.locator('[data-ranking-item=supply-noodle-01] .ranking-evidence>summary').click();assert.match(await page.locator('.ranking-intervals').innerText(),/盤點 20 ＋入庫 5 −盤點 6 ＝ 19 杯/);
+ await page.locator('[data-ranking-filter=unit]').selectOption('碗');assert.deepEqual(await ids(),['supply-noodle-02']);assert.match(await page.locator('.ranking-row-rate').innerText(),/7.*碗／工作週/s);await page.locator('#ranking-search').fill('滿漢');assert.deepEqual(await ids(),['supply-noodle-02']);
+ await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:`/tmp/consumption-noodle-${width}.png`,fullPage:true});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+ assert.deepEqual(reads,['warehouse'],'all ranking filters reuse the one warehouse snapshot');
  const oldRange=await page.locator('.ranking-period span').innerText();await page.locator('#ranking-search').focus();
  await page.evaluate(()=>{window.__rankingClockOffset=86400000;window.__rankingRefresh();});
- assert.notEqual(await page.locator('.ranking-period span').innerText(),oldRange);assert.equal(await page.evaluate(()=>document.activeElement.id),'ranking-search');
- assert.deepEqual(reads,['warehouse'],'all ranking filters reuse the one warehouse snapshot');assert.deepEqual(writes,[]);assert.deepEqual(errors,[]);assert.deepEqual({catalog:b.sheets.Catalog.rows,history:b.sheets.History.rows,supplies:b.sheets.SupplyHistory.rows},original);
- await context.close();console.log(`PASS ${width}: drink packages ranked together, two kinds only, measured podium, period/unit/category/search/history filters, flavor comparison, keyboard details, one read, zero writes.`);
+ await page.waitForFunction(old=>document.querySelector('.ranking-period span')?.textContent!==old,oldRange);assert.equal(await page.evaluate(()=>document.activeElement.id),'ranking-search');
+ assert.deepEqual(reads,['warehouse','warehouse'],'the timer independently refreshes the snapshot once');assert.deepEqual(writes,[]);assert.deepEqual(errors,[]);assert.deepEqual({catalog:b.sheets.Catalog.rows,history:b.sheets.History.rows,supplyCatalog:b.sheets.SupplyCatalog.rows,supplies:b.sheets.SupplyHistory.rows},original);
+ await context.close();console.log(`PASS ${width}: drink packages ranked together, four food categories, independent frozen/noodle units and interval arrivals, pending states, measured podium, period/unit/category/search/history filters, flavor comparison, keyboard details, local filters, read-only timed refresh.`);
 }
  const b=websiteBackend();b.sheets.History.rows.splice(1);const context=await browser.newContext({viewport:{width:390,height:960}}),page=await context.newPage();
  await page.route('**/config.js',r=>r.fulfill({contentType:'application/javascript',body:`window.DRINKS_CONFIG=${JSON.stringify({provider:'google',googleScriptUrl:endpoint})};`}));

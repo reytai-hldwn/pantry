@@ -35,7 +35,7 @@ test('adjustments, invalid quantities and short intervals stay separate while va
 test('rankings isolate kinds, units, history and flavors, with stable ties and no mutations',()=>{
  const supplies=[item('s1','包',{kind:'snack',name:'洋芋片',flavor:'起司',category:'太空包'}),item('s2','包',{kind:'snack',name:'洋芋片',flavor:'海苔',category:'太空包'}),item('toner','盒',{kind:'toner'})],supplyEvents=supplies.flatMap(row=>[event(row.id,'count',20,10),event(row.id,'count',13,3)].map(({drinkId,...e})=>({...e,supplyId:drinkId})));
  const rows=metrics({drinks:[item('包裝甲'),item('包裝乙'),item('罐裝','罐'),item('history','包',{active:false})],events:['包裝甲','包裝乙','罐裝','history'].flatMap(id=>[event(id,'count',10,10),event(id,'count',3,3)]),supplies,supplyEvents}),before=structuredClone(rows);
- assert.deepEqual(Object.keys(CONSUMPTION_KINDS),['drink','snack']);assert.equal(selectConsumption(rows,{kind:'drink'}).ranked.length,3);assert.equal(selectConsumption(rows,{kind:'drink'}).unit,'*');assert.ok(!rows.some(row=>row.kind==='toner'));
+ assert.deepEqual(Object.keys(CONSUMPTION_KINDS),['drink','snack','frozen','noodle']);assert.equal(selectConsumption(rows,{kind:'drink'}).ranked.length,3);assert.equal(selectConsumption(rows,{kind:'drink'}).unit,'*');assert.ok(!rows.some(row=>row.kind==='toner'));
  const drinks=selectConsumption(rows,{kind:'drink',unit:'包'});assert.equal(drinks.ranked.length,2);assert.deepEqual(drinks.ranked.map(row=>row.id),['包裝乙','包裝甲'].sort((a,b)=>a.localeCompare(b,'zh-TW')));
  assert.equal(selectConsumption(rows,{kind:'drink',unit:'罐'}).ranked.length,1);assert.equal(selectConsumption(rows,{kind:'drink',unit:'包',archived:true}).ranked.length,3);
  const snack=selectConsumption(rows,{kind:'snack',query:'起司',category:'太空包'});assert.equal(snack.ranked.length,1);assert.equal(snack.ranked[0].id,'s1');const html=renderConsumptionResults(snack);assert.match(html,/同品項的其他口味/);assert.match(html,/海苔/);assert.match(html,/盤點 20 ＋入庫 0 −盤點 13 ＝ 7 包/);assert.deepEqual(rows,before);
@@ -45,6 +45,44 @@ test('rankings isolate kinds, units, history and flavors, with stable ties and n
 test('new catalog items render honest readiness, escaped labels and a stocktaking link',()=>{
  const rows=metrics({drinks:[item('x','包',{name:'<script>unsafe</script>'})],events:[]}),selection=selectConsumption(rows,{kind:'drink'}),html=renderConsumptionResults(selection);
  assert.match(html,/排行榜準備中/);assert.match(html,/等待更多紀錄/);assert.match(html,/href="#count"/);assert.match(html,/&lt;script&gt;/);assert.doesNotMatch(html,/<script>/);assert.equal(selection.ranked.length,0);
+});
+
+test('frozen and noodle rankings include interval arrivals, isolate units and keep unmeasured items pending',()=>{
+ const supplies=[
+  item('ice-stick','支',{kind:'frozen',category:'',name:'香草雪糕'}),
+  item('ice-cup','杯',{kind:'frozen',category:'',name:'冰淇淋杯'}),
+  item('ice-old','支',{kind:'frozen',category:'',active:false}),
+  item('ice-once','支',{kind:'frozen',category:''}),
+  item('ice-arrival','支',{kind:'frozen',category:''}),
+  item('ice-zero','支',{kind:'frozen',category:''}),
+  item('noodle-cup','杯',{kind:'noodle',category:'',name:'海鮮杯麵'}),
+  item('noodle-bowl','碗',{kind:'noodle',category:'',name:'牛肉碗麵'}),
+  item('noodle-arrival','杯',{kind:'noodle',category:''}),
+ ];
+ const supplyEvent=(id,type,quantity,days)=>{const {drinkId,...value}=event(id,type,quantity,days);return {...value,supplyId:drinkId};};
+ const supplyEvents=['ice-stick','ice-cup','ice-old','noodle-cup','noodle-bowl'].flatMap(id=>[
+  supplyEvent(id,'count',20,10),supplyEvent(id,'restock',5,7),supplyEvent(id,'count',8,3),
+ ]);
+ supplyEvents.push(supplyEvent('ice-once','count',50,3),supplyEvent('ice-arrival','restock',90,5),supplyEvent('noodle-arrival','restock',99,5),supplyEvent('ice-zero','count',10,10),supplyEvent('ice-zero','count',10,3));
+ const data={supplies,supplyEvents},before=structuredClone(data),rows=metrics(data);
+ for(const kind of ['frozen','noodle']){
+  const selected=selectConsumption(rows,{kind});
+  assert.equal(selected.units.includes('*'),false);
+  assert.ok(selected.ranked.every(row=>row.kind===kind&&row.unit===selected.unit));
+  assert.equal(selected.ranked[0].consumed,17);
+  assert.equal(selected.ranked[0].weekly,17);
+  assert.match(renderConsumptionResults(selected,{now}),kind==='frozen'?/🍦/:/🍜/);
+  const pending=selected.pending.map(row=>row.id);
+  assert.ok(pending.includes(kind==='frozen'?'ice-arrival':'noodle-arrival'));
+ }
+ const frozen=selectConsumption(rows,{kind:'frozen',unit:'支'});
+ assert.deepEqual(frozen.ranked.map(row=>row.id),['ice-stick']);assert.deepEqual(frozen.zero.map(row=>row.id),['ice-zero']);
+ assert.equal(frozen.pending.find(row=>row.id==='ice-once').reason,'等待下次盤點');
+ assert.equal(selectConsumption(rows,{kind:'frozen',unit:'支',archived:true}).ranked.length,2);
+ assert.deepEqual(selectConsumption(rows,{kind:'frozen',unit:'杯'}).ranked.map(row=>row.id),['ice-cup']);
+ assert.deepEqual(selectConsumption(rows,{kind:'noodle',unit:'碗'}).ranked.map(row=>row.id),['noodle-bowl']);
+ assert.deepEqual(selectConsumption(rows,{kind:'noodle',unit:'杯',query:'海鮮'}).ranked.map(row=>row.id),['noodle-cup']);
+ assert.deepEqual(data,before,'rankings never mutate inventory or arrival/count histories');
 });
 
 test('short working-day observations show usage beside the five-day extrapolation',()=>{

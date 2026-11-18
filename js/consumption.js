@@ -2,7 +2,7 @@ import { workingDaysBetween, WORKWEEK_DAYS } from './workdays.js';
 import { completeConsumptionIntervals } from './consumption-intervals.js';
 
 /** Read-only, measured consumption between completed real stocktakes. */
-export const CONSUMPTION_KINDS = Object.freeze({drink:'飲料',snack:'零食'});
+export const CONSUMPTION_KINDS = Object.freeze({drink:'飲料',snack:'零食',frozen:'冰品',noodle:'泡麵'});
 const CONSUMPTION_DAY = 86400000;
 
 export function buildConsumptionRecords({drinks=[],supplies=[],events=[],supplyEvents=[]}, now=Date.now()) {
@@ -51,7 +51,7 @@ export function consumptionPeriod(records,{days=30,now=Date.now()}={}) {
   });
 }
 
-/** Drink packages can be ranked together; snacks retain their physical-unit filter. All filters stay local. */
+/** Drink packages can be ranked together; other foods use the same physical unit. All filters stay local. */
 export function selectConsumption(records,state={}) {
   const kind=Object.hasOwn(CONSUMPTION_KINDS,state.kind)?state.kind:'drink';
   const kindRows=records.filter(row=>row.kind===kind&&(state.archived||row.active!==false));

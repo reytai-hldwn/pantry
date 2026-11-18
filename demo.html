@@ -1283,7 +1283,7 @@ function fulfilZeroRestocks(previous, next) {
 
 
 /** Read-only, measured consumption between completed real stocktakes. */
-const CONSUMPTION_KINDS = Object.freeze({drink:'飲料',snack:'零食'});
+const CONSUMPTION_KINDS = Object.freeze({drink:'飲料',snack:'零食',frozen:'冰品',noodle:'泡麵'});
 const CONSUMPTION_DAY = 86400000;
 
 function buildConsumptionRecords({drinks=[],supplies=[],events=[],supplyEvents=[]}, now=Date.now()) {
@@ -1332,7 +1332,7 @@ function consumptionPeriod(records,{days=30,now=Date.now()}={}) {
   });
 }
 
-/** Drink packages can be ranked together; snacks retain their physical-unit filter. All filters stay local. */
+/** Drink packages can be ranked together; other foods use the same physical unit. All filters stay local. */
 function selectConsumption(records,state={}) {
   const kind=Object.hasOwn(CONSUMPTION_KINDS,state.kind)?state.kind:'drink';
   const kindRows=records.filter(row=>row.kind===kind&&(state.archived||row.active!==false));
@@ -3488,7 +3488,7 @@ function syncFridgeDoor(element, isOpen) {
 const rankNumber=value=>value>0&&value<0.1?'低於 0.1':new Intl.NumberFormat('zh-TW',{maximumFractionDigits:1}).format(value);
 const rankDate=value=>new Intl.DateTimeFormat('zh-TW',{timeZone:'Asia/Taipei',year:'numeric',month:'numeric',day:'numeric'}).format(new Date(value));
 const rankName=row=>`${row.kind==='drink'?fridgeDisplayName(row.name):row.name}${row.flavor?`｜${row.flavor}`:''}`;
-const rankArt=row=>row.kind==='drink'?drinkPack(row):`<span class="ranking-item-icon" aria-hidden="true">${row.kind==='snack'?'🍿':row.kind==='noodle'?'🍜':'▧'}</span>`;
+const rankArt=row=>row.kind==='drink'?drinkPack(row):`<span class="ranking-item-icon" aria-hidden="true">${row.kind==='snack'?'🍿':row.kind==='frozen'?'🍦':row.kind==='noodle'?'🍜':'▧'}</span>`;
 const rankObservation=row=>`觀察 ${rankNumber(row.observedDays)} 個工作日 · 消耗 ${rankNumber(row.consumed)} ${h(row.unit)}`;
 
 function renderConsumptionControls(selection,state) {
@@ -3513,7 +3513,7 @@ function renderConsumptionResults(selection,{days=30,now=Date.now()}={}) {
   const podium=top.length?`<section class="ranking-podium" aria-label="每工作週消耗前三名">${top.map((row,index)=>`<article class="ranking-winner ranking-place-${index+1}"><span class="ranking-medal" aria-label="第 ${index+1} 名">${['♛','②','③'][index]}</span><div class="ranking-product">${rankArt(row)}</div><p class="ranking-winner-caption">${index===0?'本期人氣王':index===1?'大家的心頭好':'默默被偏愛'}</p><h2>${h(rankName(row))}</h2><p class="ranking-rate"><strong>${rankNumber(row.weekly)}</strong> ${h(row.unit)}<small>換算每工作週</small></p><p class="ranking-observation">${rankObservation(row)}${row.observedDays<WORKWEEK_DAYS?'<br><small>未滿5個工作日，先看趨勢</small>':''}</p>${row.active===false?'<span class="pill pill-muted">歷史品項</span>':''}</article>`).join('')}</section>`:`<section class="panel ranking-empty"><span aria-hidden="true">${selection.zero.length?'☕':'☆'}</span><h2>${selection.items.length===0?'這個分類還沒有相符品項':selection.zero.length?'這段期間尚未觀察到消耗':'排行榜準備中'}</h2><p>${selection.items.length===0?'換個單位、分類或搜尋文字看看。':selection.zero.length?'已有可比較的盤點紀錄，但數量沒有減少；這些品項會列在下方。':'每個品項累積至少一個工作日的實際盤點觀察後，就能換算每5個工作日的消耗。只有入庫或一次盤點時，先不列排名。'}</p>${selection.items.length?'<a class="button button-outline" href="#count">前往快速盤點 ↗</a>':''}</section>`;
   const list=selection.ranked.length?`<section class="panel ranking-list"><div class="section-heading"><h2>每工作週消耗排行榜</h2><span class="subtle">${selection.unit==='*'?'包／瓶／罐':h(selection.unit)}／工作週 · 共 ${selection.ranked.length} 種</span></div><ol>${selection.ranked.slice(0,20).map((row,index)=>`<li data-ranking-item="${h(row.id)}"><div class="ranking-row"><b class="ranking-position">${String(index+1).padStart(2,'0')}</b><div class="ranking-name"><strong>${h(rankName(row))}</strong><small>${h(row.category||CONSUMPTION_KINDS[row.kind])}${row.active===false?' · 歷史品項':''} · ${rankObservation(row)}</small><span class="ranking-bar" aria-hidden="true"><i style="width:${Math.max(1,Math.round(row.weekly/maximum*100))}%"></i></span></div><span class="ranking-row-rate"><strong>${rankNumber(row.weekly)}</strong><small>${h(row.unit)}／工作週</small></span></div>${rankEvidence(row,selection)}</li>`).join('')}</ol>${selection.ranked.length>20?'<p class="subtle">顯示前 20 名，可用搜尋找特定品項。</p>':''}</section>`:'';
   const unranked=(rows,title,zero=false)=>rows.length?`<details class="panel ranking-waiting"><summary>${title}<span>${rows.length} 種</span></summary><ul>${rows.slice(0,50).map(row=>`<li><span><strong>${h(rankName(row))}</strong><small>${row.counts} 次實際盤點${row.latestCountAt?` · 最近 ${rankDate(row.latestCountAt)}`:''}</small></span><b>${zero?`0 ${h(row.unit)}／工作週`:h(row.reason)}</b></li>`).join('')}</ul>${rows.length>50?'<p class="subtle">顯示前 50 種，可用搜尋縮小範圍。</p>':''}</details>`:'';
-  return `${period}${stats}${podium}${list}${unranked(selection.zero,'本期未觀察到消耗',true)}${unranked(selection.pending,'正在累積紀錄')}<details class="panel ranking-method"><summary>怎麼看這份排行榜？</summary><p>兩次實際盤點之間，用「上次盤點＋期間入庫−這次盤點」估算消耗，除以區間內的工作日天數，再乘以5，換算每工作週用量。以台灣時間的週一至週五計算，排除週六、週日；並非最近5個工作日實際用量。觀察未滿5個工作日時，短期變動會被放大。飲料可將包、瓶、罐一起按消耗件數比較；零食保留相同單位比較。沒有實際紀錄的品項不列為零消耗。</p><p>只採選定期間內完整的盤點紀錄；連續的短區間會合併到至少一個工作日的觀察中，數量異常與整段沒有庫存的區間不列入。盤點也可能包含報廢或調整，因此這是消耗估算。</p></details>`;
+  return `${period}${stats}${podium}${list}${unranked(selection.zero,'本期未觀察到消耗',true)}${unranked(selection.pending,'正在累積紀錄')}<details class="panel ranking-method"><summary>怎麼看這份排行榜？</summary><p>兩次實際盤點之間，用「上次盤點＋期間入庫−這次盤點」估算消耗，除以區間內的工作日天數，再乘以5，換算每工作週用量。以台灣時間的週一至週五計算，排除週六、週日；並非最近5個工作日實際用量。觀察未滿5個工作日時，短期變動會被放大。飲料可將包、瓶、罐一起按消耗件數比較；零食、冰品與泡麵依相同單位比較。沒有實際紀錄的品項不列為零消耗。</p><p>只採選定期間內完整的盤點紀錄；連續的短區間會合併到至少一個工作日的觀察中，數量異常與整段沒有庫存的區間不列入。盤點也可能包含報廢或調整，因此這是消耗估算。</p></details>`;
 }
 
 
