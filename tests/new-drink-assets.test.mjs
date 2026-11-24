@@ -52,7 +52,12 @@ test('new labels retain original serving values and distinguish missing lemon in
 
 test('new drink photos preserve source pixels, remove exterior backgrounds and use small local display files', async () => {
   const audit = JSON.parse(await readFile(new URL('../docs/PRODUCT-PHOTOS.json', import.meta.url)));
-  for (const name of [...arrivals.map(([name]) => name), '可爾必思開心成長160ml']) {
+  const names = [
+    ...arrivals.map(([name]) => name), '可爾必思開心成長160ml',
+    '日月潭台茶十八號（450ml)', '嘉紛娜蘋果奇異果汁', '16茶（530ml）',
+    '貝思寶兒檸檬紅茶', '香蕉牛奶', '義美低糖豆奶',
+  ];
+  for (const name of names) {
     const photo = findProductPhoto(name);
     const source = await readFile(new URL('../' + photo.src, import.meta.url));
     const display = await readFile(new URL('../' + photo.displaySrc, import.meta.url));
@@ -67,6 +72,8 @@ test('new drink photos preserve source pixels, remove exterior backgrounds and u
     assert.doesNotMatch(markup, /https:\/\//, 'viewing the fridge never contacts a merchant');
     assert.match(drinkPack({ name }, { defer: true }), /data-product-src=/);
   }
+  assert.notEqual(findProductPhoto('16茶（530ml）').src, findProductPhoto('十六茶').src);
+  assert.match(findProductPhoto('日月潭台茶十八號（450ml)').referenceNote, /490 毫升.*450 毫升/);
 });
 
 test('confirmed Taiwan Calpis carton has its own complete serving, calcium and allergen information', () => {

@@ -625,6 +625,115 @@
       "source": "https://24h.pchome.com.tw/prod/DBAB04-A9008IMTD",
       "imageUrl": "https://cs-a.ecimg.tw/items/DBAB04A9008IMTD/l000002_1786412789.jpg",
       "sha256": "644fcc96bb4455f0aa7ec87a75d78d1c13c6a17dcfdb17e40d777f86bbc30328"
+    },
+    {
+      "file": "frescafina-apple-kiwi-250.jpg",
+      "original": "嘉紛娜 100% 多酚蘋果奇異果汁 250 毫升",
+      "originalSize": [
+        1200,
+        1200
+      ],
+      "crop": [
+        362,
+        57,
+        478,
+        1093
+      ],
+      "checkedAt": "2026-11-24",
+      "source": "https://www.costco.com.tw/Food-Dining/Drinks/Beverages-Juice/Frescafina-100-Apple-Kiwi-Juice-250-ml-X-24-Count/p/111425",
+      "imageUrl": "https://www.costco.com.tw/medias/sys_master/images/h7b/h3b/86784921468958.jpg",
+      "sha256": "f8ac4c4af8ec9ad8f6f42faf50dda63dbc4f128a2d885880bdf69b8fd2139cd9"
+    },
+    {
+      "file": "imei-low-sugar-soy-milk-250.jpg",
+      "original": "義美 低糖豆奶 250 毫升",
+      "originalSize": [
+        1200,
+        1200
+      ],
+      "crop": [
+        248,
+        53,
+        696,
+        1091
+      ],
+      "checkedAt": "2026-11-24",
+      "source": "https://www.costco.com.tw/Food-Dining/Drinks/Beverages-Juice/I-Mei-Low-Sugar-Soybean-Milk-250-ml-X-24-Count/p/146158",
+      "imageUrl": "https://www.costco.com.tw/medias/sys_master/images/h12/h46/313982830182430.jpg",
+      "sha256": "6de8716b27159aad33f925a67fa145464539ee2032f875cd9d4f4c9b1d329539"
+    },
+    {
+      "file": "asahi-sixteen-tea-530.jpg",
+      "original": "Asahi 十六茶（經典無糖）530 毫升寶特瓶",
+      "originalSize": [
+        800,
+        800
+      ],
+      "crop": [
+        291,
+        25,
+        214,
+        761
+      ],
+      "checkedAt": "2026-11-24",
+      "source": "https://online.uni-prosperity.com.tw/zh/asahi/1003502100124.html",
+      "imageUrl": "https://online.uni-prosperity.com.tw/on/demandware.static/-/Sites-uniprosperity-tw-m-inner/default/dw0d2a1b4c/images/large/1003502100104_NR_00.jpg",
+      "sha256": "a5ed197ed99bc99893438efd00ffd92683321e1ba3f199536d62355799fede05"
+    },
+    {
+      "file": "bessie-byer-lemon-tea-330.jpg",
+      "original": "貝思寶兒 檸檬紅茶 330 毫升紙盒",
+      "originalSize": [
+        800,
+        800
+      ],
+      "crop": [
+        179,
+        24,
+        424,
+        744
+      ],
+      "checkedAt": "2026-11-24",
+      "source": "https://online.uni-prosperity.com.tw/zh/%E8%B2%9D%E6%80%9D%E5%AF%B6%E5%85%92--bessie-byer/1003400500106.html",
+      "imageUrl": "https://online.uni-prosperity.com.tw/on/demandware.static/-/Sites-uniprosperity-tw-m-inner/default/dw2c17933f/images/large/1003400500106_NR_00.jpg",
+      "sha256": "6e1678f41ac0ab1df4df3a204bb4e505702b443eba531ee61740a890af1106f0"
+    },
+    {
+      "file": "binggrae-banana-milk-200.jpg",
+      "original": "Binggrae 香蕉牛奶（保久調味乳）200 毫升紙盒",
+      "originalSize": [
+        1000,
+        1000
+      ],
+      "crop": [
+        239,
+        223,
+        327,
+        695
+      ],
+      "checkedAt": "2026-11-24",
+      "source": "https://24h.pchome.com.tw/prod/DBAJAQ-A900HAPJK",
+      "imageUrl": "https://cs-a.ecimg.tw/items/DBAJAQA900HAPJK/000001_1710131527.jpg",
+      "sha256": "3eaf25474d5f5003328e07519e07bbd49a3cdd66b43fb87990c3ee33e939b390"
+    },
+    {
+      "file": "sunmoon-ruby-black-tea-490.jpg",
+      "original": "日月潭台茶十八號無糖紅茶 490 毫升寶特瓶",
+      "originalSize": [
+        1000,
+        1000
+      ],
+      "crop": [
+        382,
+        129,
+        230,
+        740
+      ],
+      "checkedAt": "2026-11-24",
+      "source": "https://www.momoshop.com.tw/TP/TP0001342/goodsDetail/TP00013420001190",
+      "imageUrl": "https://i5.momoshop.com.tw/1790614940/goodsimg/TP000/1342/0001/190/TP00013420001190_O_m.jpg",
+      "sha256": "daebf63cb7e2a35402073bf10fc4dabca5d5bbd1f02b04bbfbcf232ee79c1e0a",
+      "note": "照片為日月潭紅茶廠 490 毫升瓶裝，庫存登記容量為 450 毫升。"
     }
   ],
   "pending": [],
