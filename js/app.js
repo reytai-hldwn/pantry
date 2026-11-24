@@ -71,9 +71,12 @@ const gachaStorageKey=`holdwin-gacha-v1:${location.pathname.replace(/index\.html
 let gachaState = null;
 let gachaDayTimer;
 
-const formatDate = (value, time = false) => value ? new Intl.DateTimeFormat('zh-TW', {
-  timeZone: 'Asia/Taipei', ...(time ? { year: 'numeric' } : {}), month: '2-digit', day: '2-digit', ...(time ? { hour: '2-digit', minute: '2-digit', hour12: false } : {}),
-}).format(new Date(value)) : '尚未盤點';
+const dateOptions = { timeZone: 'Asia/Taipei', month: '2-digit', day: '2-digit' };
+const dateFormatter = new Intl.DateTimeFormat('zh-TW', dateOptions);
+const dateTimeFormatter = new Intl.DateTimeFormat('zh-TW', {
+  ...dateOptions, year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
+});
+const formatDate = (value, time = false) => value ? (time ? dateTimeFormatter : dateFormatter).format(new Date(value)) : '尚未盤點';
 const daysAgo = (date) => date ? Math.max(0, Math.floor((Date.now() - Date.parse(date)) / 86400000)) : null;
 const total = (items, field) => items.reduce((sum, item) => sum + item[field], 0);
 const stockEvents = () => [...store.data.events,...(store.supplyEvents || []),...coffeeStockEvents(store.coffeeReceipts)].filter((event) => ['count', 'restock','expiry-close','expiry-set'].includes(event.type));
@@ -281,8 +284,16 @@ function supplyCountCell(item) {
   const icon = item.kind === 'toner' ? `<span class="toner-swatch toner-${h(item.id.split('-').pop())}"></span>` : item.kind === 'noodle' ? '🍜' : item.kind === 'frozen' ? '❄️' : icons[item.category] || '🍿';
   return `<div class="supply-count-item"><span class="drink-avatar supply-count-avatar" aria-hidden="true">${icon}</span><span class="supply-count-label"><strong>${h(item.name)}</strong><small>${item.flavor ? `${h(item.flavor)} · ` : ''}${h(item.kind === 'snack' ? item.category : SUPPLY_KINDS[item.kind])}${snackPackHint(item)?` · ${h(snackPackHint(item))}`:''}</small></span></div>`;
 }
+function countStockDetails(item, emptyLabel) {
+  const recorded = hasRecordedStock(item);
+  const stock = recorded ? `${item.stock} ${h(item.unit)}` : emptyLabel;
+  const lastCount = item.lastCountAt
+    ? `上次實際盤點 <time datetime="${h(item.lastCountAt)}">${formatDate(item.lastCountAt, true)}</time>`
+    : recorded ? '依入庫紀錄，尚未實際盤點' : '尚未盤點';
+  return `<span class="muted">${stock}</span><small class="count-last-time">${lastCount}</small>`;
+}
 function supplyCountTable(items) {
-  return `<div class="panel supply-count-panel"><div class="table-scroll"><table class="count-table supply-count-table"><colgroup><col class="count-name-width"><col class="count-stock-width"><col class="count-number-width"></colgroup><thead><tr><th>品項</th><th>上次紀錄數量</th><th>這次實際盤點</th></tr></thead><tbody>${items.map(item => `<tr data-count-item="${h(item.id)}" data-count-category="${h(item.category||'')}" data-count-product="${h(item.name)}" data-count-label="${h(supplyLabel(item))}"><td class="supply-count-name">${supplyCountCell(item)}</td><td class="supply-count-stock" data-label="上次紀錄數量"><span class="muted">${hasRecordedStock(item) ? `${item.stock} ${h(item.unit)}` : '尚未確認'}</span></td><td class="supply-count-number" data-label="這次實際盤點"><input class="count-input" type="number" name="${h(item.id)}" data-supply-count min="0" max="999999" step="1" inputmode="numeric" placeholder="未盤點留白" aria-label="${h(supplyLabel(item))}實際剩餘數量"><span class="count-unit">${h(item.unit)}</span></td></tr>`).join('')}</tbody></table></div></div>`;
+  return `<div class="panel supply-count-panel"><div class="table-scroll"><table class="count-table supply-count-table"><colgroup><col class="count-name-width"><col class="count-stock-width"><col class="count-number-width"></colgroup><thead><tr><th>品項</th><th>上次紀錄數量</th><th>這次實際盤點</th></tr></thead><tbody>${items.map(item => `<tr data-count-item="${h(item.id)}" data-count-category="${h(item.category||'')}" data-count-product="${h(item.name)}" data-count-label="${h(supplyLabel(item))}"><td class="supply-count-name">${supplyCountCell(item)}</td><td class="supply-count-stock" data-label="上次紀錄數量">${countStockDetails(item, '尚未確認')}</td><td class="supply-count-number" data-label="這次實際盤點"><input class="count-input" type="number" name="${h(item.id)}" data-supply-count min="0" max="999999" step="1" inputmode="numeric" placeholder="未盤點留白" aria-label="${h(supplyLabel(item))}實際剩餘數量"><span class="count-unit">${h(item.unit)}</span></td></tr>`).join('')}</tbody></table></div></div>`;
 }
 
 function renderSupplyInventoryRow(item,{rowspan=1,showName=true,grouped=false}={}) {
@@ -520,7 +531,7 @@ function renderCount() {
   const drinks = sortedCountItems(activeDrinks());
   main.innerHTML = heading('A FRESH COUNT', '幫飲料架點個名', '每三天或一週盤點一次，就很夠用了。請填實際剩餘的單瓶／單罐數量。') +
     '<div class="info-box">至少填寫一個品項即可送出。空白代表這次未盤點，保留原紀錄；填 0 代表實際剩餘 0。已填數量即使沒變，也會留下新的盤點紀錄。</div>' +
-    (drinks.length ? `${countFilterControls(drinks)}<form id="count-form">${recorderField()}<div class="panel table-scroll"><table class="count-table"><thead><tr><th>飲料品項</th><th>上次帳面庫存</th><th>這次實際盤點</th></tr></thead><tbody>${drinks.map((drink) => `<tr data-count-item="${h(drink.id)}" data-count-category="${h(drink.category)}" data-count-product="${h(drink.name)}" data-count-label="${h(drink.name)}"><td>${drinkCell(drink)}</td><td><span class="muted">${hasRecordedStock(drink) ? `${drink.stock} ${h(drink.unit)}` : '尚無庫存紀錄'}</span>${!drink.lastCountAt && hasRecordedStock(drink) ? '<br><small class="cell-note">依入庫紀錄，尚未實際盤點</small>' : ''}</td><td><input class="count-input" type="number" inputmode="numeric" min="0" max="999999" step="1" name="${h(drink.id)}" placeholder="未盤點請留白" aria-label="${h(drink.name)}實際剩餘數量"><span class="count-unit">${h(drink.unit)}</span></td></tr>`).join('')}</tbody></table></div><div class="sticky-actions"><span>可選填 ${drinks.length} 種飲料，至少一項</span><button type="submit" class="button">✓ 儲存本次盤點</button></div></form>` : `<div class="panel">${empty('還沒有飲料品項', '先新增品項，下一步就可以盤點了。', button('＋ 新增品項', 'new-drink'))}</div>`);
+    (drinks.length ? `${countFilterControls(drinks)}<form id="count-form">${recorderField()}<div class="panel table-scroll"><table class="count-table"><thead><tr><th>飲料品項</th><th>上次帳面庫存</th><th>這次實際盤點</th></tr></thead><tbody>${drinks.map((drink) => `<tr data-count-item="${h(drink.id)}" data-count-category="${h(drink.category)}" data-count-product="${h(drink.name)}" data-count-label="${h(drink.name)}"><td>${drinkCell(drink)}</td><td>${countStockDetails(drink, '尚無庫存紀錄')}</td><td><input class="count-input" type="number" inputmode="numeric" min="0" max="999999" step="1" name="${h(drink.id)}" placeholder="未盤點請留白" aria-label="${h(drink.name)}實際剩餘數量"><span class="count-unit">${h(drink.unit)}</span></td></tr>`).join('')}</tbody></table></div><div class="sticky-actions"><span>可選填 ${drinks.length} 種飲料，至少一項</span><button type="submit" class="button">✓ 儲存本次盤點</button></div></form>` : `<div class="panel">${empty('還沒有飲料品項', '先新增品項，下一步就可以盤點了。', button('＋ 新增品項', 'new-drink'))}</div>`);
   main.querySelector('.page-heading').insertAdjacentHTML('afterend',countTabs);
   updateCountFilters();
 }
