@@ -31,6 +31,7 @@ const NEW_ARRIVAL_VALUE = '__new__';
 const viewNames = { overview: '飲料冰箱', wishes: '採買許願池', archive: '歷史品項', admin: '管理後台', products: '倉庫庫存', count: '快速盤點', restock: '到貨入庫 · 飲料', 'restock-snack':'到貨入庫 · 零食', 'restock-frozen':'到貨入庫 · 冰品', 'restock-noodle': '到貨入庫 · 泡麵', 'restock-toner': '到貨入庫 · 碳粉', 'manage-wishes': '願望管理', history: '異動紀錄' };
 viewNames.consumption = '消耗排行榜';
 viewNames.gacha = '今日補給扭蛋';
+viewNames['snack-drawer'] = '零食抽屜';
 viewNames['restock-coffee'] = '到貨入庫 · 咖啡豆';
 const adminViews = new Set(['admin', 'consumption', 'products', 'count', ...Object.keys(restockViews), 'manage-wishes', 'history']);
 let view = 'overview';
@@ -123,6 +124,8 @@ function updateChrome() {
     else element.removeAttribute('aria-current');
   });
   $('#connection-status').textContent = store.revalidateOnStart ? `上次讀取的資料${refreshing ? ' · 更新中…' : ''}` : `${store.mode === 'demo' ? '本機示範' : store.mode === 'google' ? 'Google 共用資料' : '共用資料'} · ${inAdmin ? '管理後台' : '前台瀏覽'}`;
+  $('#connection-status').hidden = view === 'snack-drawer';
+  $('#refresh-button').hidden = view === 'snack-drawer';
   $('#auth-button').textContent = inAdmin ? '返回前台' : '管理後台';
   $('#logout-button').hidden = !store.user;
   const banner = $('#mode-banner');
@@ -199,6 +202,28 @@ function renderOverview() {
     `<section class="pantry-overview" aria-label="飲料冰箱"><div class="inventory-panel fridge-panel${fridgeOpen ? ' is-browsing' : ''}">${inventoryToolbar()}<div id="inventory-table"></div></div></section>`;
   $('.fridge-panel > .toolbar').hidden = !fridgeOpen;
   renderInventoryTable();
+}
+
+function renderSnackDrawer() {
+  if (main.firstElementChild?.classList.contains('snack-drawer')) return;
+  const root = document.createElement('div');
+  root.className = 'snack-drawer';
+  const load = async () => {
+    root.innerHTML = '<div class="loading-state" role="status"><span class="loader"></span><p>正在開啟零食抽屜…</p></div>';
+    try {
+      const { mountSnackDrawer, snackDrawerRankings } = await import('./snack-drawer.js');
+      if (root.isConnected) mountSnackDrawer(root, showModal, async () => {
+        const source = store.mode === 'google' ? (await store.fetchWarehouseSnapshot()).result : store;
+        return snackDrawerRankings(source);
+      });
+    } catch {
+      if (!root.isConnected) return;
+      root.innerHTML = '<div class="panel"><h1>零食抽屜</h1><p>暫時無法開啟零食抽屜。</p><button class="button" type="button">重新載入</button></div>';
+      root.querySelector('button').addEventListener('click', () => location.reload());
+    }
+  };
+  main.replaceChildren(root);
+  load();
 }
 
 function arrivalItems(kind='drink') {
@@ -814,7 +839,7 @@ function render() {
   }
   if (store.mode === 'google' && !store.supportsWebsiteEntry && view === 'count') { renderGoogleEntry(); return; }
   if (Object.hasOwn(restockViews, view)) renderRestock();
-  else ({ overview: renderOverview, gacha:renderGachaPage, consumption:renderConsumption, products: renderWarehouse, archive: renderArchive, admin: renderAdmin, count: renderCount, wishes: renderWishes, 'manage-wishes': renderWishes, history: renderHistory })[view]();
+  else ({ overview: renderOverview, 'snack-drawer': renderSnackDrawer, gacha:renderGachaPage, consumption:renderConsumption, products: renderWarehouse, archive: renderArchive, admin: renderAdmin, count: renderCount, wishes: renderWishes, 'manage-wishes': renderWishes, history: renderHistory })[view]();
 }
 
 async function route() {
@@ -833,10 +858,11 @@ async function route() {
     return;
   }
   if(nextView==='products'&&view!=='products'){filter=warehouseArchiveShortcut?'archived':'all';warehouseArchiveShortcut=false;supplyFilter=filter==='archived'?'archived':'all';query='';category='';supplyQuery='';supplyCategory='';supplyProduct='';}
+  if (view === 'snack-drawer' && nextView !== view && modal.open) modal.close();
   view = nextView;
   const sequence = ++routeSequence;
   if(store.mode==='google'&&view!=='admin')store.cancelOtherViewReads(adminViews.has(view));
-  const needsGoogleRead = store.mode === 'google' && view !== 'admin' && (!store.googleViewLoaded || store.inWarehouse !== adminViews.has(view));
+  const needsGoogleRead = store.mode === 'google' && view !== 'admin' && view !== 'snack-drawer' && (!store.googleViewLoaded || store.inWarehouse !== adminViews.has(view));
   routeLoading = needsGoogleRead;
   if (needsGoogleRead) {
     syncFridgeScene(null);
@@ -1513,7 +1539,7 @@ if(store.mode==='google'&&(!location.hash||location.hash==='#overview')){
   renderOverview();updateChrome();main.setAttribute('aria-busy','true');
 }
 try {
-  if (store.mode === 'google' && location.hash === '#admin') { /* The entry and summary do not wait for full histories. */ }
+  if (store.mode === 'google' && ['#admin', '#snack-drawer'].includes(location.hash)) { /* These views can open without loading inventory histories. */ }
   else if (store.mode === 'google' && adminViews.has(location.hash.slice(1))) await store.openWarehouse();
   else await store.init();
   ready = true;

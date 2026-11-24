@@ -3,6 +3,8 @@ import { spawnSync } from 'node:child_process';
 import { dirname, extname, isAbsolute, join, basename, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PRODUCT_PHOTOS } from '../js/product-photos.js';
+import { SNACK_DRAWER_PRODUCTS } from '../js/snack-drawer-catalog.js';
+import { SNACK_DRAWER_SCENE } from '../js/snack-drawer.js';
 import { createCompanyData } from '../js/catalog.js';
 import { applyInitialStocktake } from '../js/domain.js';
 
@@ -30,7 +32,8 @@ if (argumentsList.length) {
 }
 const read = (path) => readFile(new URL(path, root), 'utf8');
 let html = await read('index.html');
-const [coffeeModule, drinkAvailabilityModule, workdaysModule, arrivalGuardModule, consumptionIntervalsModule, styles, themes, fridge, pantry, theme, domain, inventoryActivityModule, suppliesModule, restockPreferencesModule, emptyStockModule, consumptionModule, consumptionViewModule, gachaModule, catalog, productPhotosModule, wishSupportModule, drinkLabelsModule, drinkInformationModule, fridgeModule, googleWriteModule, googleStore, store, app, mark, productImages] = await Promise.all([
+const snackImagePaths = [...new Set([SNACK_DRAWER_SCENE, ...SNACK_DRAWER_PRODUCTS.flatMap(product => product.photos.map(photo => photo.src))])];
+const [coffeeModule, drinkAvailabilityModule, workdaysModule, arrivalGuardModule, consumptionIntervalsModule, styles, themes, fridge, pantry, theme, domain, inventoryActivityModule, suppliesModule, restockPreferencesModule, emptyStockModule, consumptionModule, consumptionViewModule, gachaModule, catalog, productPhotosModule, wishSupportModule, drinkLabelsModule, drinkInformationModule, fridgeModule, googleWriteModule, googleStore, store, app, mark, productImages, snackDrawer, snackCatalog, snackImages] = await Promise.all([
   read('js/coffee.js'), read('js/drink-availability.js'), read('js/workdays.js'), read('js/arrival-guard.js'), read('js/consumption-intervals.js'), read('styles.css'), read('themes.css'), read('fridge.css'), read('pantry.css'), read('theme.js'), read('js/domain.js'), read('js/inventory-activity.js'), read('js/supplies.js'), read('js/restock-preferences.js'), read('js/empty-stock.js'), read('js/consumption.js'), read('js/consumption-view.js'), read('js/gacha.js'), read('js/catalog.js'), read('js/product-photos.js'), read('js/wish-support.js'), read('js/drink-labels.js'), read('js/drink-information.js'), read('js/fridge.js'), read('js/google-write.js'), read('js/google-store.js'), read('js/store.js'), read('js/app.js'), readFile(new URL('assets/holdwin-mark-small.webp', root)),
   Promise.all([...PRODUCT_PHOTOS.filter((photo) => photo.enabled !== false).flatMap(photo => [{ src: photo.src }, { src: photo.displaySrc }]), { src: './assets/holdwin-icon.png' }, { src: './assets/pantry-mobile.webp' }, { src: './assets/pantry-coffee.webp' }, { src: './assets/pantry-office-wide.webp' }, { src: './assets/pantry-office-portrait.webp' }, { src: './assets/pantry-ui.woff2' }, { src: './assets/pantry-product-characters.woff2' }, { src: './assets/pantry-hand-complete.woff2' }].map(async ({ src }) => {
     const mime = { '.png': 'image/png', '.webp': 'image/webp', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.avif': 'image/avif', '.woff2': 'font/woff2' }[extname(src).toLowerCase()];
@@ -38,6 +41,8 @@ const [coffeeModule, drinkAvailabilityModule, workdaysModule, arrivalGuardModule
     const bytes = await readFile(new URL(src, root));
     return { src, dataUrl: `data:${mime};base64,${bytes.toString('base64')}` };
   })),
+  read('js/snack-drawer.js'), read('js/snack-drawer-catalog.js'),
+  Promise.all(snackImagePaths.map(async src => ({ src, dataUrl: 'data:image/webp;base64,' + (await readFile(new URL(src, root))).toString('base64') }))),
 ]);
 // Offline previews keep the original single embedded fallback; only the website
 // downloads small unicode-range shards for newly entered heading characters.
@@ -48,7 +53,9 @@ const previewProductPhotos = productPhotosModule.replace(/"src":("[^"]+")/g, (ma
   const photo = PRODUCT_PHOTOS.find(photo => photo.src === JSON.parse(encoded));
   return photo ? `${match},"displaySrc":${JSON.stringify(photo.displaySrc)}` : match;
 });
-const inline = [stripModule(workdaysModule), stripModule(consumptionIntervalsModule), stripModule(arrivalGuardModule), stripModule(domain), stripModule(coffeeModule), stripModule(drinkAvailabilityModule), stripModule(inventoryActivityModule), stripModule(suppliesModule), stripModule(restockPreferencesModule), stripModule(emptyStockModule), stripModule(consumptionModule), stripModule(catalog), stripModule(previewProductPhotos), 'const h = escapeHtml;', stripModule(wishSupportModule), stripModule(drinkLabelsModule), stripModule(drinkInformationModule), stripModule(fridgeModule), stripModule(consumptionViewModule), stripModule(gachaModule), stripModule(googleWriteModule), stripModule(googleStore), stripModule(store), stripModule(app)].join('\n');
+const previewSnackModule = `const previewSnackDrawer = (() => {\n${stripModule(snackCatalog)}\n${stripModule(snackDrawer)}\nreturn { mountSnackDrawer, snackDrawerRankings };\n})();`;
+const previewApp = stripModule(app).replace("import('./snack-drawer.js')", 'Promise.resolve(previewSnackDrawer)');
+const inline = [stripModule(workdaysModule), stripModule(consumptionIntervalsModule), stripModule(arrivalGuardModule), stripModule(domain), stripModule(coffeeModule), stripModule(drinkAvailabilityModule), stripModule(inventoryActivityModule), stripModule(suppliesModule), stripModule(restockPreferencesModule), stripModule(emptyStockModule), stripModule(consumptionModule), stripModule(catalog), stripModule(previewProductPhotos), 'const h = escapeHtml;', stripModule(wishSupportModule), stripModule(drinkLabelsModule), stripModule(drinkInformationModule), stripModule(fridgeModule), stripModule(consumptionViewModule), stripModule(gachaModule), stripModule(googleWriteModule), stripModule(googleStore), stripModule(store), previewSnackModule, previewApp].join('\n');
 const syntax = spawnSync(process.execPath, ['--check', '--input-type=module'], { input: inline, encoding: 'utf8' });
 if (syntax.status !== 0) throw new Error(`Standalone demo module failed syntax validation: ${syntax.stderr}`);
 html = html
@@ -61,7 +68,8 @@ html = html
   .replace('  <script src="./theme.js"></script>', `<script>\n${theme}\n</script>`)
   .replace('  <script src="./config.js"></script>', () => `<script>window.DRINKS_CONFIG = ${JSON.stringify(previewConfig).replaceAll('<', '\\u003c')};</script>`)
   .replace('  <script type="module" src="./js/app.js"></script>', () => `<script type="module">\n${inline}\n</script>`);
-for (const { src, dataUrl } of productImages) html = html.replaceAll(src, dataUrl);
+const previewAssets = new Map([...productImages, ...snackImages].map(({ src, dataUrl }) => [src, dataUrl]));
+html = html.replace(/\.\/assets\/[A-Za-z0-9_./-]+/g, src => previewAssets.get(src) ?? src);
 const fontLicense = (await read('assets/Pantry-Hand-OFL.txt')).replaceAll('-->', '--&gt;').replace(/[ \t]+$/gm, '');
 html = html.replace('</head>', `<!-- Self-hosted LXGW WenKai TC heading font license:\n${fontLicense}\n-->\n</head>`);
 await writeFile(output, html);
