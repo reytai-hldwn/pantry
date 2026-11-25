@@ -1431,5 +1431,52 @@ export const CHECKED_DRINK_LABELS = [
       "scope": "依朝日官方直營通路同款台灣原味 160 毫升鋁箔包的商品標示轉錄成分、過敏原及每份／每 100 毫升營養值，並與 PChome 同款規格交叉核對；不套用日本罐裝或其他容量。配方改版請以手上包裝為準。",
       "url": "https://www.momoshop.com.tw/goods/GoodsDetail.jsp?i_code=15272602"
     }
+  },
+  {
+    "names": [
+      "格力高杏仁果效果無糖杏仁果飲",
+      "格力高無糖杏仁果飲"
+    ],
+    "packaging": "鋁箔包",
+    "container": "200 毫升",
+    "ingredients": "水、杏仁醬、食物纖維（菊糖）、微結晶纖維素、香料、碳酸氫鈉、食鹽、脂肪酸蔗糖酯、玉米糖膠、維生素 E、消泡劑（脂肪酸甘油酯（471）、棕櫚油、脂肪酸聚合甘油酯（475））。",
+    "allergens": "含有堅果類、大豆及其製品。共用設備或產線亦處理含麩質穀類、牛奶、芒果、芝麻、堅果類、大豆、蕎麥、奇異果及其製品。",
+    "nutrition": {
+      "basis": "每份 200 毫升，單包 1 份，Costco 外盒共 12 份",
+      "energyKcal": 39.6,
+      "proteinG": 1.4,
+      "fatG": 2.8,
+      "saturatedFatG": 0.2,
+      "transFatG": 0,
+      "carbohydrateG": 4.2,
+      "sugarG": 0,
+      "sodiumMg": 183.4,
+      "cholesterolMg": 0,
+      "dietaryFiberG": 4,
+      "lactoseG": 0,
+      "vitaminEMg": 11,
+      "per100": {
+        "energyKcal": 19.8,
+        "proteinG": 0.7,
+        "fatG": 1.4,
+        "saturatedFatG": 0.1,
+        "transFatG": 0,
+        "carbohydrateG": 2.1,
+        "sugarG": 0,
+        "sodiumMg": 91.7,
+        "cholesterolMg": 0,
+        "dietaryFiberG": 2,
+        "lactoseG": 0,
+        "vitaminEMg": 5.5
+      }
+    },
+    "source": {
+      "type": "retailer",
+      "label": "Costco 好市多・格力高杏仁果效果",
+      "checkedAt": "2026-11-25",
+      "scope": "依 200 毫升無糖杏仁果飲的台灣包裝規格及營養標示轉錄。",
+      "url": "https://www.costco.com.tw/Food-Dining/Drinks/Beverages-Juice/Glico-Almond-Koka-Unsweetened-200-ml-X-12-Count/p/235621",
+      "labelUrl": "https://www.costco.com.tw/medias/sys_master/images/h33/h0f/488032648003614.jpg"
+    }
   }
 ];

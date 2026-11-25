@@ -70,7 +70,7 @@ export function renderDrinkInformation(drink) {
   const info = findDrinkInformation(drink);
   const pending = '<p class="subtle">尚待核對完整包裝標示。</p>';
   const nutrition = info?.nutrition;
-  const extraRows = [['calciumMg', '鈣', '毫克'], ['cholesterolMg', '膽固醇', '毫克'], ['dietaryFiberG', '膳食纖維', '公克'], ['betaGlucanG', 'β-聚葡萄糖', '公克'], ['lactoseG', '乳糖', '公克'], ['ironMg', '鐵', '毫克'], ['potassiumMg', '鉀', '毫克'], ['saltEquivalentG', '食鹽相當量', '公克']].filter(([key]) => nutrition?.[key] !== undefined);
+  const extraRows = [['calciumMg', '鈣', '毫克'], ['cholesterolMg', '膽固醇', '毫克'], ['dietaryFiberG', '膳食纖維', '公克'], ['betaGlucanG', 'β-聚葡萄糖', '公克'], ['lactoseG', '乳糖', '公克'], ['ironMg', '鐵', '毫克'], ['potassiumMg', '鉀', '毫克'], ['saltEquivalentG', '食鹽相當量', '公克'], ['vitaminEMg', '維生素 E', '毫克 α-TE']].filter(([key]) => nutrition?.[key] !== undefined);
   const nutrientValue = (value, unit) => {
     if (typeof value === 'number' && Number.isFinite(value)) return `${value} ${unit}`;
     if (value && Number.isFinite(value.min) && Number.isFinite(value.max) && value.min >= 0 && value.max >= value.min) return `${value.min}～${value.max} ${unit}`;

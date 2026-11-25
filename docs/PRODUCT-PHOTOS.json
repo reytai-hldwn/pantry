@@ -734,6 +734,24 @@
       "imageUrl": "https://i5.momoshop.com.tw/1790614940/goodsimg/TP000/1342/0001/190/TP00013420001190_O_m.jpg",
       "sha256": "daebf63cb7e2a35402073bf10fc4dabca5d5bbd1f02b04bbfbcf232ee79c1e0a",
       "note": "包裝參考圖為日月潭紅茶廠 490 毫升瓶裝。"
+    },
+    {
+      "file": "glico-almond-koka-unsweetened-200.jpg",
+      "original": "格力高 杏仁果效果 無糖杏仁果飲 200 毫升鋁箔包",
+      "originalSize": [
+        1200,
+        1200
+      ],
+      "crop": [
+        316,
+        51,
+        568,
+        1096
+      ],
+      "checkedAt": "2026-11-25",
+      "source": "https://www.costco.com.tw/Food-Dining/Drinks/Beverages-Juice/Glico-Almond-Koka-Unsweetened-200-ml-X-12-Count/p/235621",
+      "imageUrl": "https://www.costco.com.tw/medias/sys_master/images/h89/h45/488032648527902.jpg",
+      "sha256": "70b3f7f773e2cbcf0a3d4ff467c21f58cd73b47b8ebda717ff84294b6f51b20e"
     }
   ],
   "pending": [],

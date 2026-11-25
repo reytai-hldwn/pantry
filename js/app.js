@@ -16,7 +16,7 @@ import { RESTOCK_MODES, hasRecordedStock, isLowStockItem, isOutOfStockItem, inve
 import { groupEmptyStock } from './empty-stock.js';
 import { CONSUMPTION_KINDS, buildConsumptionRecords, consumptionPeriod, selectConsumption } from './consumption.js';
 import { renderConsumptionControls, renderConsumptionResults } from './consumption-view.js';
-import { gachaDay, gachaResetDelay, drawGacha, readDailyGacha, saveDailyGacha, chooseGachaDrink, renderGacha, gachaFlightKeyframes, GACHA_ANIMATION_MS, GACHA_OPEN_MS, GACHA_FLIGHT_MS, GACHA_UNFOLD_MS } from './gacha.js';
+import { gachaDay, gachaResetDelay, drawGacha, readDailyGacha, saveDailyGacha, chooseGachaDrink, chooseGachaSnack, renderGacha, gachaFlightKeyframes, GACHA_ANIMATION_MS, GACHA_OPEN_MS, GACHA_FLIGHT_MS, GACHA_UNFOLD_MS } from './gacha.js';
 
 const store = window.DRINKS_CONFIG?.provider === 'google' ? new GoogleInventoryStore(window.DRINKS_CONFIG) : new InventoryStore(window.DRINKS_CONFIG);
 const $ = (selector) => document.querySelector(selector);
@@ -757,7 +757,7 @@ function updateRankingResults(){const target=$('#ranking-results');if(target)tar
 function gameStorage(){try{return globalThis.localStorage;}catch{return null;}}
 function currentGacha(){
   const day=gachaDay();
-  if(!gachaState||gachaState.day!==day)gachaState={day,draw:readDailyGacha(gameStorage(),gachaStorageKey),loading:false,phase:'ready',drinkState:'idle',saveFailed:false};
+  if(!gachaState||gachaState.day!==day)gachaState={day,draw:readDailyGacha(gameStorage(),gachaStorageKey),loading:false,phase:'ready',drinkState:'idle',snackState:'idle',saveFailed:false};
   return gachaState;
 }
 function gachaAnimating(state){return ['spinning','opening','flying','unfolding'].includes(state.phase);}
@@ -780,22 +780,52 @@ function positionGachaNote(){
 }
 function renderGachaPage(){
   clearTimeout(gachaDayTimer);gachaDayTimer=setTimeout(()=>{if(view==='gacha')renderGachaPage();},gachaResetDelay());
-  const state=currentGacha(),description=store.supportsGacha?'轉一顆飲料，順便接收今天的好訊號。':'幸運籤先開放試玩，飲料推薦準備中。';main.innerHTML=heading('A LITTLE LUCK, ON THE HOUSE','今日補給扭蛋',description)+renderGacha(state,store.data.drinks);
+  const state=currentGacha();
+  const description=store.supportsGacha ? '轉一顆扭蛋，抽出今天的飲料和零食。' : '幸運籤先開放試玩，補給推薦準備中。';
+  main.innerHTML=heading('A LITTLE LUCK, ON THE HOUSE','今日補給扭蛋',description)+renderGacha(state,store.data.drinks);
   positionGachaNote();
-  if(state.draw&&!state.draw.drinkId&&!state.loading&&(state.drinkState==='idle'||(state.drinkState==='pending'&&store.supportsGacha)))loadGachaDrink();
+  if (!state.draw || state.loading) return;
+  const shouldLoad = (selection, status) => !selection && (status === 'idle' || (status === 'pending' && store.supportsGacha));
+  if (shouldLoad(state.draw.drinkId, state.drinkState) || shouldLoad(state.draw.snack, state.snackState)) loadGachaPair();
 }
-async function loadGachaDrink(){
-  const state=currentGacha(),draw=state.draw;if(!draw||state.loading)return;
-  state.loading=true;
-  if(view==='gacha'&&!gachaAnimating(state))renderGachaPage();
-  try{
-    const options=await store.readGachaOptions();if(gachaState!==state||draw!==state.draw||draw.day!==gachaDay())return;
-    const paired=readDailyGacha(gameStorage(),gachaStorageKey),savedDrink=paired?.fortuneId===draw.fortuneId&&paired?.createdAt===draw.createdAt&&paired.drinkId?store.data.drinks.find(item=>item.id===paired.drinkId):null;
-    const drink=savedDrink||(options.supported?chooseGachaDrink(store.data.drinks,options.eligibleIds):null);
-    state.drinkState=!options.supported?'pending':drink?'ready':'empty';
-    if(drink){draw.drinkId=drink.id;state.saveFailed=!saveDailyGacha(gameStorage(),gachaStorageKey,draw);}
-  }catch{state.drinkState='error';}
-  finally{state.loading=false;if(view==='gacha'&&gachaState===state&&!gachaAnimating(state))renderGachaPage();}
+
+async function readGachaSnacks() {
+  if (!store.supportsGacha) return null;
+  if (store.mode !== 'google') return store.supplies;
+  const { result } = await store.fetchWarehouseSnapshot();
+  return result.supplySnackVersion === 1 ? result.supplies : null;
+}
+
+async function loadGachaPair() {
+  const state = currentGacha(), draw = state.draw;
+  if (!draw || state.loading || (draw.drinkId && draw.snack)) return;
+  state.loading = true;
+  if (view === 'gacha' && !gachaAnimating(state)) renderGachaPage();
+  const [drinkRead, snackRead] = await Promise.allSettled([
+    draw.drinkId ? null : store.readGachaOptions(),
+    draw.snack ? null : readGachaSnacks(),
+  ]);
+  state.loading = false;
+  if (gachaState !== state || draw !== state.draw || draw.day !== gachaDay()) return;
+
+  const saved = readDailyGacha(gameStorage(), gachaStorageKey);
+  const sameDraw = saved?.fortuneId === draw.fortuneId && saved.createdAt === draw.createdAt;
+  const options = drinkRead.value;
+  const snacks = snackRead.value;
+  let changed = false;
+  if (!draw.drinkId) {
+    draw.drinkId = (sameDraw && saved.drinkId) || (options?.supported
+      ? chooseGachaDrink(store.data.drinks, options.eligibleIds)?.id : null) || null;
+    state.drinkState = draw.drinkId ? 'ready' : drinkRead.status === 'rejected' ? 'error' : options?.supported ? 'empty' : 'pending';
+    changed = !!draw.drinkId;
+  }
+  if (!draw.snack) {
+    draw.snack = (sameDraw && saved.snack) || (snacks ? chooseGachaSnack(snacks) : null);
+    state.snackState = draw.snack ? 'ready' : snackRead.status === 'rejected' ? 'error' : snacks ? 'empty' : 'unavailable';
+    changed ||= !!draw.snack;
+  }
+  if (changed) state.saveFailed = !saveDailyGacha(gameStorage(), gachaStorageKey, draw);
+  if (view === 'gacha' && !gachaAnimating(state)) renderGachaPage();
 }
 async function startGacha(replay=false){
   const state=currentGacha();if(gachaAnimating(state)||(!replay&&state.draw)||(replay&&!state.draw))return;
@@ -1197,7 +1227,7 @@ async function submitForm(form) {
 async function runAction(action, id) {
   if(action==='gacha-draw'){if(view==='gacha')await startGacha();return;}
   if(action==='gacha-replay'){if(view==='gacha')await startGacha(true);return;}
-  if(action==='gacha-retry'){if(view==='gacha')await loadGachaDrink();return;}
+  if(action==='gacha-retry'){if(view==='gacha')await loadGachaPair();return;}
   if(action==='ranking-kind'){
     if(view==='consumption'&&Object.hasOwn(CONSUMPTION_KINDS,id)){Object.assign(rankingState,{kind:id,unit:'',category:'',query:''});renderConsumption();}return;
   }

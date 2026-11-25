@@ -55,7 +55,7 @@ test('new drink photos preserve source pixels, remove exterior backgrounds and u
   const names = [
     ...arrivals.map(([name]) => name), '可爾必思開心成長160ml',
     '日月潭台茶十八號', '嘉紛娜蘋果奇異果汁', '16茶（530ml）',
-    '貝思寶兒檸檬紅茶', '香蕉牛奶', '義美低糖豆奶',
+    '貝思寶兒檸檬紅茶', '香蕉牛奶', '義美低糖豆奶', '格力高杏仁果效果無糖杏仁果飲',
   ];
   for (const name of names) {
     const photo = findProductPhoto(name);
@@ -77,6 +77,17 @@ test('new drink photos preserve source pixels, remove exterior backgrounds and u
   assert.equal(findProductPhoto('日月潭台茶十八號（450ml)'), teaPhoto);
   assert.match(teaPhoto.referenceNote, /490 毫升/);
   assert.doesNotMatch(teaPhoto.referenceNote, /450/);
+});
+
+test('the almond drink uses the Costco 200 mL unsweetened carton label', () => {
+  const drink = { name: '格力高杏仁果效果無糖杏仁果飲', packaging: '鋁箔包' };
+  const info = findDrinkInformation(drink);
+  assert.equal(info.container, '200 毫升');
+  assert.equal(info.nutrition.energyKcal, 39.6);
+  assert.equal(info.nutrition.sugarG, 0);
+  assert.equal(info.nutrition.per100.vitaminEMg, 5.5);
+  assert.match(info.allergens, /堅果類、大豆/);
+  assert.match(renderDrinkInformation(drink), /維生素 E/);
 });
 
 test('confirmed Taiwan Calpis carton has its own complete serving, calcium and allergen information', () => {

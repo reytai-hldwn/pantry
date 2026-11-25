@@ -286,8 +286,21 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
 @media(max-width:800px){.gacha-layout{grid-template-columns:1fr;gap:20px;max-width:530px}.gacha-machine{width:min(100%,275px)}.gacha-invitation{padding:10px 15px 35px}.gacha-ticket{padding:24px}.gacha-fortune{font-size:24px;margin-top:30px}.gacha-daily-note{margin:8px 0 0}.gacha-drink{grid-template-columns:76px minmax(0,1fr);gap:16px}.gacha-drink h3{font-size:19px}}
 @media(prefers-reduced-motion:reduce){.is-spinning .gacha-knob,.is-spinning .gacha-balls,.is-spinning svg,.is-spinning .gacha-capsule-out,.is-opening .gacha-capsule-out,.is-opening .gacha-capsule-top,.is-opening .gacha-capsule-bottom,.is-opening .gacha-capsule-note,.is-flying .gacha-capsule-note,.gacha-ticket.is-unfolding,.gacha-layout[data-gacha-phase="ready"] .gacha-ticket-content{animation:none}}
 @media(prefers-reduced-motion:reduce){.gacha-replay{display:none}}
-.gacha-drink button.text-link,.gacha-drink-status button.text-link{padding:0;border:0;background:transparent;cursor:pointer;text-align:left;font-family:inherit}
+.gacha-drink button.text-link,.gacha-retry{padding:0;border:0;background:transparent;cursor:pointer;text-align:left;font-family:inherit}
 .gacha-drink button.text-link{min-height:36px}
+.gacha-snack {
+  margin-top: 18px;
+  padding: 15px 16px 12px;
+  border: 1px solid #e8dac4;
+  border-radius: 11px 14px 10px 12px;
+  background: #fffdf7;
+  overflow-wrap: anywhere;
+}
+.gacha-snack .eyebrow { margin: 0 0 4px; }
+.gacha-snack h3 { margin: 0; color: #70523e; font-size: 1.2rem; }
+.gacha-snack .subtle { margin: 4px 0; }
+.gacha-snack a { display: inline-flex; align-items: center; min-height: 36px; }
+.gacha-retry { margin-top: 8px; min-height: 36px; }
 @media(max-width:900px){body[data-area=front] nav#navigation{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;overflow:visible}body[data-area=front] nav#navigation a{min-width:0;min-height:44px;white-space:normal;text-align:center}}
 
 .ranking-observation{font-size:11px;color:var(--muted);line-height:1.8;margin:10px 0 0}.ranking-observation small{font-size:10px}@media(max-width:640px){.ranking-observation{grid-column:2;margin:6px 0 0}}
@@ -374,12 +387,24 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
   position: absolute;
   z-index: 1;
   padding: 0;
-  border: 1px solid transparent;
-  border-radius: 2px;
+  border: 0;
   background: none;
 }
-.snack-hit:hover { border-color: #765335bf; background: #fdf2d42b; }
-.snack-hit:focus-visible { outline-offset: -3px; }
+.snack-hit:active { transform: none; }
+.snack-hit-outline {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: #fdf2d42b;
+  stroke: #765335;
+  stroke-width: 4px;
+  opacity: 0;
+  pointer-events: none;
+}
+.snack-hit:focus-visible .snack-hit-outline { opacity: 1; stroke-width: 6px; }
+@media (hover: hover) {
+  .snack-hit:hover .snack-hit-outline { opacity: 1; }
+}
 .snack-guide {
   position: absolute;
   z-index: 2;
@@ -543,7 +568,14 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
 }
 .snack-product-art.is-paired img { width: calc((100% - 4px) / 2); }
 .snack-product-art.is-compact img { width: 58%; height: 54%; }
-.snack-product-art img.is-opaque { mix-blend-mode: multiply; }
+.snack-product-art img.is-opaque { mix-blend-mode: multiply; filter: none; }
+.snack-photo-clip { position: absolute; }
+.snack-product-art img.has-silhouette {
+  width: auto;
+  max-width: 100%;
+  aspect-ratio: 1;
+  filter: none;
+}
 .snack-product-title { font-size: .86rem; font-weight: 650; line-height: 1.45; }
 .snack-product-title small { display: block; margin-top: 3px; color: #735441; font-size: .76rem; font-weight: 450; }
 .snack-shelf-rail {

@@ -4,7 +4,7 @@ import { dirname, extname, isAbsolute, join, basename, relative, resolve } from 
 import { fileURLToPath } from 'node:url';
 import { PRODUCT_PHOTOS } from '../js/product-photos.js';
 import { SNACK_DRAWER_PRODUCTS } from '../js/snack-drawer-catalog.js';
-import { SNACK_DRAWER_SCENE } from '../js/snack-drawer.js';
+import { SNACK_DRAWER_SCENE, SNACK_DRAWER_CONTENTS } from '../js/snack-drawer.js';
 import { createCompanyData } from '../js/catalog.js';
 import { applyInitialStocktake } from '../js/domain.js';
 
@@ -32,7 +32,7 @@ if (argumentsList.length) {
 }
 const read = (path) => readFile(new URL(path, root), 'utf8');
 let html = await read('index.html');
-const snackImagePaths = [...new Set([SNACK_DRAWER_SCENE, ...SNACK_DRAWER_PRODUCTS.flatMap(product => product.photos.map(photo => photo.src))])];
+const snackImagePaths = [...new Set([SNACK_DRAWER_SCENE, SNACK_DRAWER_CONTENTS, ...SNACK_DRAWER_PRODUCTS.flatMap(product => product.photos.map(photo => photo.src))])];
 const [coffeeModule, drinkAvailabilityModule, workdaysModule, arrivalGuardModule, consumptionIntervalsModule, styles, themes, fridge, pantry, theme, domain, inventoryActivityModule, suppliesModule, restockPreferencesModule, emptyStockModule, consumptionModule, consumptionViewModule, gachaModule, catalog, productPhotosModule, wishSupportModule, drinkLabelsModule, drinkInformationModule, fridgeModule, googleWriteModule, googleStore, store, app, mark, productImages, snackDrawer, snackCatalog, snackImages] = await Promise.all([
   read('js/coffee.js'), read('js/drink-availability.js'), read('js/workdays.js'), read('js/arrival-guard.js'), read('js/consumption-intervals.js'), read('styles.css'), read('themes.css'), read('fridge.css'), read('pantry.css'), read('theme.js'), read('js/domain.js'), read('js/inventory-activity.js'), read('js/supplies.js'), read('js/restock-preferences.js'), read('js/empty-stock.js'), read('js/consumption.js'), read('js/consumption-view.js'), read('js/gacha.js'), read('js/catalog.js'), read('js/product-photos.js'), read('js/wish-support.js'), read('js/drink-labels.js'), read('js/drink-information.js'), read('js/fridge.js'), read('js/google-write.js'), read('js/google-store.js'), read('js/store.js'), read('js/app.js'), readFile(new URL('assets/holdwin-mark-small.webp', root)),
   Promise.all([...PRODUCT_PHOTOS.filter((photo) => photo.enabled !== false).flatMap(photo => [{ src: photo.src }, { src: photo.displaySrc }]), { src: './assets/holdwin-icon.png' }, { src: './assets/pantry-mobile.webp' }, { src: './assets/pantry-coffee.webp' }, { src: './assets/pantry-office-wide.webp' }, { src: './assets/pantry-office-portrait.webp' }, { src: './assets/pantry-ui.woff2' }, { src: './assets/pantry-product-characters.woff2' }, { src: './assets/pantry-hand-complete.woff2' }].map(async ({ src }) => {

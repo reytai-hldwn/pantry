@@ -4,6 +4,7 @@ import { SNACK_CATEGORIES, supplyLabel } from './supplies.js';
 import { SNACK_DRAWER_PRODUCTS } from './snack-drawer-catalog.js';
 
 export const SNACK_DRAWER_SCENE = './assets/snacks/tea-room-drawer.webp';
+export const SNACK_DRAWER_CONTENTS = './assets/snacks/tea-room-drawer-contents.webp';
 const snackSceneSize = { width: 1446, height: 1087 };
 // The opening follows the perspective of the actual upper drawer in the illustration.
 const snackDrawerCorners = [[432, 762], [856, 749], [857, 791], [432, 808]];
@@ -12,10 +13,18 @@ const snackDrawerCrop = { x: 432, y: 749, width: 425, height: 59 };
 const productsByKey = new Map(SNACK_DRAWER_PRODUCTS.map(product => [product.key, product]));
 const normalizeSnackSearch = text => text.normalize('NFKC').toLocaleLowerCase('zh-TW');
 
+function snackProductPhoto(photo, id) {
+  const clip = photo.silhouette ? `<svg class="snack-photo-clip" width="0" height="0" aria-hidden="true"><defs>
+    <clipPath id="${id}" clipPathUnits="objectBoundingBox">${photo.silhouette.map(points => `<polygon points="${points}"></polygon>`).join('')}</clipPath>
+  </defs></svg>` : '';
+  const treatment = clip ? ` class="has-silhouette" style="clip-path:url(#${id})"` : photo.opaque ? ' class="is-opaque"' : '';
+  return `${clip}<img src="${h(photo.src)}" alt="" loading="lazy" decoding="async"${treatment}>`;
+}
+
 function snackProductCard(product) {
   const { key, name, flavors, photos, imageCaption, compactPhoto } = product;
   const classes = ['snack-product-art', photos.length > 1 ? 'is-paired' : '', compactPhoto ? 'is-compact' : ''].filter(Boolean).join(' ');
-  const images = photos.map(photo => `<img src="${h(photo.src)}" alt="" loading="lazy" decoding="async"${photo.opaque ? ' class="is-opaque"' : ''}>`).join('');
+  const images = photos.map((photo, index) => snackProductPhoto(photo, `outline-${key}-${index}`)).join('');
   return `<button class="snack-product" type="button" data-snack-product-key="${h(key)}">
     <span class="${classes}">${images}</span>
     <span class="snack-product-title">${h(name)}${flavors ? `<small>${h(flavors)}</small>` : ''}${imageCaption ? `<small>${h(imageCaption)}</small>` : ''}</span>
@@ -70,7 +79,7 @@ function fillDrawerSurface(context, points, color) {
   context.fill();
 }
 
-function drawSnackPull(context, image, packets, progress) {
+function drawSnackPull(context, image, contents, progress) {
   context.clearRect(0, 0, context.canvas.width, context.canvas.height);
   if (progress === 0) return;
 
@@ -97,6 +106,8 @@ function drawSnackPull(context, image, packets, progress) {
   // Paint the lip and well inside the exposed quadrilateral so nothing crosses
   // the counter or the moving face even in the first few pixels of travel.
   const top = [left, right, frontRight, frontLeft];
+  const insideLeft = [left[0] + 5, left[1]];
+  const insideRight = [right[0] - 5, right[1]];
   const floor = context.createLinearGradient(x, y, x + 2, frontY + 14);
   floor.addColorStop(0, '#503e2c');
   floor.addColorStop(.45, '#8e7050');
@@ -105,28 +116,22 @@ function drawSnackPull(context, image, packets, progress) {
   snackDrawerPath(context, top);
   context.clip();
   fillDrawerSurface(context, top, floor);
-  packets.forEach((packet, index) => {
-    if (!packet.complete || !packet.naturalWidth) return;
-    const position = (index + .55) / packets.length;
-    const px = frontLeft[0] + position * (frontRight[0] - frontLeft[0]);
-    const py = frontLeft[1] + position * (frontRight[1] - frontLeft[1]) - 3 - (index % 2) * 3;
-    const ratio = packet.naturalWidth / packet.naturalHeight;
-    const packetHeight = 40 * scale;
-    const packetWidth = packetHeight * ratio / .38;
+  if (contents?.naturalWidth) {
+    // The packed surface travels with the drawer. The counter's edge clips
+    // the back of the illustration as the contents slide into view.
+    const [artLeft, artRight] = [project(insideLeft), project(insideRight)];
+    const artWidth = artRight[0] - artLeft[0];
+    const slope = (artRight[1] - artLeft[1]) / artWidth;
     context.save();
-    context.translate(px, py);
-    context.transform(1, -.034, (px - 465) / (py - 555) * .65, 1, 0, 0);
-    context.rotate(index % 2 ? .04 : -.05);
-    context.drawImage(packet, -packetWidth / 2, -packetHeight, packetWidth, packetHeight);
+    context.transform(1, slope, .28, 1, artLeft[0], artLeft[1]);
+    context.drawImage(contents, -4, -51 * scale, artWidth + 22, 51 * scale);
     context.restore();
-  });
+  }
   const shade = context.createLinearGradient(x, y, x + 2, frontY + 12);
   shade.addColorStop(0, '#332211b3');
   shade.addColorStop(.65, '#442e171f');
   shade.addColorStop(1, '#442e1708');
   fillDrawerSurface(context, top, shade);
-  const insideLeft = [left[0] + 5, left[1]];
-  const insideRight = [right[0] - 5, right[1]];
   fillDrawerSurface(context, [left, insideLeft, project(insideLeft), frontLeft], '#d7b989');
   fillDrawerSurface(context, [insideRight, right, frontRight, project(insideRight)], '#bca074');
   fillDrawerSurface(context, [frontLeft, frontRight, [frontRight[0], frontRight[1] - 3], [frontLeft[0], frontLeft[1] - 3]], '#dfc199');
@@ -139,7 +144,7 @@ function drawSnackPull(context, image, packets, progress) {
   context.restore();
 }
 
-async function animateSnackPull(scene, packets, from, to) {
+async function animateSnackPull(scene, contents, from, to) {
   const context = scene.querySelector('canvas').getContext('2d');
   const image = scene.querySelector('img');
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -149,11 +154,11 @@ async function animateSnackPull(scene, packets, from, to) {
     let start;
     function frame(now) {
       if (!scene.isConnected) { resolve(); return; }
-      if (reducedMotion.matches) { drawSnackPull(context, image, packets, 0); resolve(); return; }
+      if (reducedMotion.matches) { drawSnackPull(context, image, contents, 0); resolve(); return; }
       start ??= now;
       const time = Math.max(0, Math.min(1, (now - start) / 545));
       const eased = time * time * (3 - 2 * time);
-      drawSnackPull(context, image, packets, from + (to - from) * eased);
+      drawSnackPull(context, image, contents, from + (to - from) * eased);
       if (time < 1) requestAnimationFrame(frame);
       else resolve();
     }
@@ -181,14 +186,20 @@ function renderSnackRanking({ unit, observed, rows } = {}) {
 export function mountSnackDrawer(root, showDetails, readRankings) {
   const { width, height } = snackSceneSize;
   const crop = snackDrawerCrop;
-  const hitBox = `left:${crop.x / width * 100}%;top:${crop.y / height * 100}%;width:${crop.width / width * 100}%;height:${crop.height / height * 100}%`;
+  const hitPoints = snackDrawerCorners.map(([x, y]) => [x - crop.x, y - crop.y]);
+  const hitShape = hitPoints.map(([x, y]) => `${x / crop.width * 100}% ${y / crop.height * 100}%`).join(',');
+  const hitBox = `left:${crop.x / width * 100}%;top:${crop.y / height * 100}%;width:${crop.width / width * 100}%;height:${crop.height / height * 100}%;clip-path:polygon(${hitShape})`;
   root.innerHTML = `
     <div class="pantry-heading snack-heading"><h1>零食抽屜</h1></div>
     <section class="snack-room" aria-label="電視下方的零食抽屜">
       <div class="snack-scene">
         <img class="snack-scene-art" src="${SNACK_DRAWER_SCENE}" alt="茶水間裡，木質零食抽屜在電視下方" width="${width}" height="${height}">
         <canvas width="${width}" height="${height}" aria-hidden="true"></canvas>
-        <button class="snack-hit" style="${hitBox}" type="button" aria-controls="snack-cabinet" aria-expanded="false" aria-label="拉開電視下方的抽屜"></button>
+        <button class="snack-hit" style="${hitBox}" type="button" aria-controls="snack-cabinet" aria-expanded="false" aria-label="拉開電視下方的抽屜">
+          <svg class="snack-hit-outline" viewBox="0 0 ${crop.width} ${crop.height}" preserveAspectRatio="none" aria-hidden="true">
+            <polygon points="${hitPoints.join(' ')}" vector-effect="non-scaling-stroke"></polygon>
+          </svg>
+        </button>
         <span class="snack-guide-arrow" aria-hidden="true"></span>
         <button class="snack-guide" type="button" aria-controls="snack-cabinet" aria-expanded="false">拉開零食抽屜</button>
       </div>
@@ -210,15 +221,14 @@ export function mountSnackDrawer(root, showDetails, readRankings) {
       <button class="snack-drawer-face" type="button"><span class="snack-handle" aria-hidden="true"></span>推回抽屜 <span aria-hidden="true">↑</span></button>
     </section>`;
   const room = root.querySelector('.snack-room');
-  // Warm just the four catalogue thumbnails visible during the pull. Opening
-  // does not wait for them, and reduced-motion visitors skip them entirely.
-  const packets = matchMedia('(prefers-reduced-motion: reduce)').matches ? [] :
-    ['snack-002', 'snack-070', 'snack-021', 'snack-013'].map(key => {
-      const image = new Image();
-      image.fetchPriority = 'low';
-      image.src = productsByKey.get(key).photos[0].src;
-      return image;
-    });
+  // Start loading the illustrated contents ahead of the gesture. The drawer
+  // remains usable while the image loads, and reduced-motion can skip it.
+  let contents;
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    contents = new Image();
+    contents.fetchPriority = 'low';
+    contents.src = SNACK_DRAWER_CONTENTS;
+  }
   const openers = [...root.querySelectorAll('.snack-guide, .snack-hit')];
   const cabinet = root.querySelector('.snack-cabinet');
   const close = root.querySelector('.snack-close');
@@ -265,7 +275,7 @@ export function mountSnackDrawer(root, showDetails, readRankings) {
     if (open) {
       opener = trigger;
       room.classList.add('is-pulling');
-      await animateSnackPull(room, packets, 0, 1);
+      await animateSnackPull(room, contents, 0, 1);
       if (!room.isConnected) return;
       if (!shelves.hasChildNodes()) renderTray();
       room.hidden = true;
@@ -275,7 +285,7 @@ export function mountSnackDrawer(root, showDetails, readRankings) {
       cabinet.hidden = true;
       room.hidden = false;
       opener.focus();
-      await animateSnackPull(room, packets, 1, 0);
+      await animateSnackPull(room, contents, 1, 0);
       if (!room.isConnected) return;
       room.classList.remove('is-pulling');
     }

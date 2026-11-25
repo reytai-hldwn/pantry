@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {GACHA_FORTUNES,gachaDay,gachaResetDelay,drawGacha,readDailyGacha,saveDailyGacha,chooseGachaDrink,renderGacha,gachaFlightKeyframes} from '../js/gacha.js';
+import {GACHA_FORTUNES,gachaDay,gachaResetDelay,drawGacha,readDailyGacha,saveDailyGacha,chooseGachaDrink,chooseGachaSnack,renderGacha,gachaFlightKeyframes} from '../js/gacha.js';
 import {websiteBackend} from './helpers/google-website.mjs';
 import {GoogleInventoryStore,normalizeGooglePublicData} from '../js/google-store.js';
 const storage=()=>{const m=new Map();return{getItem:key=>m.get(key)||null,setItem:(key,value)=>m.set(key,value)};};
@@ -52,6 +52,36 @@ test('gacha endpoint reveals only eligible IDs and does not create stocktakes, a
  assert.equal(result.ok,true);assert.deepEqual(result.eligibleIds,['milk']);assert.deepEqual(Object.keys(result).sort(),['ok','version','snapshotAt','eligibleIds'].sort());assert.doesNotMatch(JSON.stringify(result),/recorder|events|stock|email|quantity|測試/);
  assert.deepEqual(Object.fromEntries(Object.entries(b.sheets).map(([key,sheet])=>[key,plain(sheet.rows)])),before);
  assert.equal(normalizeGooglePublicData(plain(b.ctx.publicData_(b.ss))).gachaVersion,1);
+});
+
+test('the daily snack uses active stock and extends a saved drink and fortune without replacing either', () => {
+ const now = Date.parse('2026-11-25T08:00:00Z');
+ const local = storage();
+ const { snack: unused, ...legacyDraw } = drawGacha({ now, random: () => 0 });
+ legacyDraw.drinkId = 'tea';
+ saveDailyGacha(local, 'daily', legacyDraw);
+ const draw = readDailyGacha(local, 'daily', now);
+ assert.deepEqual(draw, { ...legacyDraw, snack: null });
+
+ const item = { id: 'chips', name: '洋芋片', kind: 'snack', unit: '包', stock: 4, active: true, category: '太空包', flavor: '海苔' };
+ draw.snack = chooseGachaSnack([
+   { ...item, id: 'other', kind: 'noodle' },
+   { ...item, id: 'unknown', stock: null },
+   { ...item, id: 'zero', stock: 0 },
+   { ...item, id: 'archived', active: false },
+   item,
+ ], () => 0);
+ assert.equal(draw.snack.id, 'chips');
+ assert.equal(Object.hasOwn(draw.snack, 'stock'), false);
+ saveDailyGacha(local, 'daily', draw);
+ assert.deepEqual(readDailyGacha(local, 'daily', now), draw);
+ const output = renderGacha({ draw }, [{ id: 'tea', name: '綠茶', unit: '瓶' }]);
+ assert.match(output, /要來一瓶綠茶嗎/);
+ assert.match(output, /今日推薦零食.*洋芋片.*海苔/);
+ assert.equal(chooseGachaSnack([{ ...item, stock: 0 }]), null);
+
+ saveDailyGacha(local, 'daily', { ...draw, snack: { ...draw.snack, id: '<invalid>' } });
+ assert.deepEqual(readDailyGacha(local, 'daily', now), { ...legacyDraw, snack: null });
 });
 
 test('read options are gated on deployment, deduplicate in-flight reads and validate the minimal response',async()=>{
