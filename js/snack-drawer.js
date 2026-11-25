@@ -304,7 +304,10 @@ export function mountSnackDrawer(root, showDetails, readRankings) {
   tray.addEventListener('click', event => {
     const product = productsByKey.get(event.target.closest('[data-snack-product-key]')?.dataset.snackProductKey);
     if (!product) return;
-    const details = product.details.map(({ flavor, nutrition }) => `<section>${flavor ? `<h3>${h(flavor)}</h3>` : ''}${snackNutrition(nutrition)}</section>`).join('');
+    const details = product.details.map(({ flavor, nutrition, ingredients }) => {
+      const ingredientList = ingredients ? `<details><summary>成分</summary><p>${h(ingredients)}</p></details>` : '';
+      return `<section>${flavor ? `<h3>${h(flavor)}</h3>` : ''}${snackNutrition(nutrition)}${ingredientList}</section>`;
+    }).join('');
     const photoNote = product.photoNote ? `<p class="subtle">${h(product.photoNote)}</p>` : '';
     showDetails(h(product.name), h(product.category), `<div class="snack-nutrition">${details}${photoNote}</div>`);
   });
