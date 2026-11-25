@@ -680,7 +680,7 @@ function prepareSnackCatalogBatch_(ss,data) {
   var changes=data.entries.map(function(entry){
     if(!entry||entry.quantity!==undefined||entry.stock!==undefined)throw websiteInputError_('品項建檔不能包含盤點或入庫數量。');
     var name=websiteText_(entry.name,'品項名稱',80,true),flavor=websiteText_(entry.flavor||'','口味',80,false),category=canonicalSnackCategory_(websiteText_(entry.category,'零食分類',80,true));
-    var unit=cornStickBulkPack_(name)?'包':entry.unit;
+    var unit=isCornStickName_(name)?'條':entry.unit;
     if(SNACK_CATEGORIES.indexOf(category)<0||SNACK_UNITS.indexOf(unit)<0)throw websiteInputError_('請提供有效的零食分類與單位。');
     var id=entry.supplyId||'supply-snack-'+websiteFingerprint_({operation:'snack-catalog-key',data:{key:supplyProductKey_(name,flavor)}}).slice(0,48);
     if(!/^[A-Za-z0-9_-]{1,80}$/.test(id)||seen[id])throw websiteInputError_('批次品項代號無效或重複。');seen[id]=true;
@@ -831,7 +831,7 @@ function prepareWebsiteRequest_(ss, request, stamp, context) {
     var kind = data.kind;
     if (['drink','snack','frozen','noodle'].indexOf(kind) < 0) throw websiteInputError_('新品到貨僅支援飲料、零食、冰品與泡麵。');
     var name = websiteText_(data.name, '新品名稱', 80, true);
-    if(kind==='snack'&&cornStickBulkPack_(name))data=Object.assign({},data,{unit:'包'});
+    if(kind==='snack'&&isCornStickName_(name))data=Object.assign({},data,{unit:'條'});
     var recorder = websiteText_(data.recorder, '登記人', 80, true);
     var note = websiteText_(data.note || '', '入庫備註', 500, false);
     var quantity = quantity_(data.quantity, false);
@@ -1250,7 +1250,7 @@ function buildAdminSummary_() {
   var lowItems=active.filter(function(item){return item.stock!==null&&(['snack','frozen','noodle'].indexOf(item.kind)<0||restockMode_(preferences,item.kind,item.id)==='consider')&&(item.kind==='toner'?item.stock===0:item.stock>0&&item.stock<=(item.kind==='noodle'?3:10));}).map(summary).sort(function(a,b){return a.stock-b.stock;});
   var outOfStockItems=active.filter(function(item){return item.kind!=='toner'&&item.stock===0;}).map(summary);
   var manualSnackItems=restockItems.filter(function(item){return item.kind==='snack';}).map(function(item){var preference=preferences.filter(function(entry){return entry.kind==='snack'&&entry.itemId===item.id;})[0];return Object.assign({},item,{markedAt:preference.updatedAt});});
-  var rows=events.concat(supplyEvents).filter(function(event){return event.accepted!==false&&['count','restock'].indexOf(event.type)>=0;}).map(function(event){var item=items.filter(function(item){return item.id===(event.drinkId||event.supplyId);})[0];return item?{id:event.id,itemId:item.id,kind:item.kind,name:item.name,flavor:item.flavor||'',unit:item.unit,quantity:event.quantity,createdAt:event.createdAt,type:event.type}:null;}).filter(Boolean).sort(function(a,b){return Date.parse(b.createdAt)-Date.parse(a.createdAt);});
+  var rows=events.concat(supplyEvents).filter(function(event){return event.accepted!==false&&['count','restock'].indexOf(event.type)>=0;}).map(function(event){var item=items.filter(function(item){return item.id===(event.drinkId||event.supplyId);})[0];return item?{id:event.id,itemId:item.id,kind:item.kind,name:item.name,flavor:item.flavor||'',unit:event.unit||item.unit,quantity:event.quantity,createdAt:event.createdAt,type:event.type}:null;}).filter(Boolean).sort(function(a,b){return Date.parse(b.createdAt)-Date.parse(a.createdAt);});
   var recentCounts=['drink','snack','frozen','noodle','toner'].map(function(kind){var counts=rows.filter(function(event){return event.kind===kind&&event.type==='count';}),stamp=counts.length?counts[0].createdAt:null;return {kind:kind,countedAt:stamp,items:counts.filter(function(event){return event.createdAt===stamp;}).slice(0,1000)};});
   return {ok:true,version:1,performanceVersion:1,zeroStockVersion:1,restockAuthVersion:2,snapshotAt:snapshotAt,activityVersion:1,inventoryTotalsVersion:1,inventoryTotals:inventoryTotals_(items),totalDrinks:catalog.length,pendingWishes:wishRows_(ss).filter(function(wish){return wish.status==='pending';}).length,restockItems:restockItems,lowItems:lowItems,outOfStockItems:outOfStockItems,manualSnackItems:manualSnackItems,recentArrivals:rows.filter(function(event){return event.type==='restock';}).slice(0,12),recentCounts:recentCounts};
 }
@@ -1531,13 +1531,17 @@ function websiteSupplyExpiry_(kind, value, stamp) {
 
 function supplyProductKey_(name,flavor) { var aliases={'多力多滋雙倍起司口味':['多力多滋','超濃起司'],'多力多滋香菜口味':['多力多滋','香菜'],'樂事海苔口味':['樂事','海苔'],'華元蚵仔煎':['華元洋芋片','蚵仔煎'],'華元辣蚵仔煎':['華元洋芋片','辣蚵仔煎']},key=productNameKey_(name);if(!flavor&&Object.prototype.hasOwnProperty.call(aliases,key)){name=aliases[key][0];flavor=aliases[key][1];}return productNameKey_(name)+'\u0000'+productNameKey_(flavor||''); }
 
-function cornStickBulkPack_(name) { return /^鴻津玉米棒(?:[（(]量販包[）)])?$/.test(text_(name,80).normalize('NFKC').replace(/\s+/g,'')); }
+function isCornStickName_(name) { return /^鴻津玉米棒(?:[（(]量販包[）)])?$/.test(text_(name,80).normalize('NFKC').replace(/\s+/g,'')); }
+
+function cornStickEventUnit_(eventId) {
+  return String(eventId).indexOf('website:corn-stick-unit-') === 0 ? '條' : '包';
+}
 
 function supplyCatalog_(ss) {
   var sheet = ss.getSheetByName(SHEETS.supplyCatalog), seen = Object.create(null);
   var rows = sheet && sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 7).getValues() : [];
   var supplies = rows.filter(function (row) { return row[0] || row[1]; }).map(function (row) {
-    var id = String(row[0]), kind = String(row[2]), name = text_(row[1], 80), unit = kind==='snack'&&cornStickBulkPack_(name)?'包':String(row[3]);
+    var id = String(row[0]), kind = String(row[2]), name = text_(row[1], 80), unit = kind==='snack'&&isCornStickName_(name)?'條':String(row[3]);
     if (!/^[A-Za-z0-9_-]{1,80}$/.test(id) || seen[id] || !name || ['snack','frozen','noodle','toner'].indexOf(kind) < 0 || supplyUnits_(kind).indexOf(unit) < 0) throw new Error('Invalid supply catalog');
     var known = INITIAL_SUPPLIES.filter(function (item) { return item.id === id; })[0];
     if (known && (known.kind !== kind || known.unit !== unit)) throw new Error('Invalid confirmed supply unit');
@@ -1562,7 +1566,7 @@ function ensureSupplyStorage_(ss) {
     if(!header[5]||!header[6])catalog.getRange(1,6,1,2).setValues([SUPPLY_CATALOG_HEADERS.slice(5)]);
   } else catalog = ensureSheet_(ss, SHEETS.supplyCatalog, SUPPLY_CATALOG_HEADERS);
   var existing=catalog.getLastRow()>1?catalog.getRange(2,1,catalog.getLastRow()-1,7).getValues():[],known=Object.create(null);
-  existing.forEach(function(row,index){known[String(row[0])]=true;if(row[2]==='snack'&&cornStickBulkPack_(row[1])&&row[3]!=='包')catalog.getRange(index+2,4,1,1).setValues([['包']]);});
+  existing.forEach(function(row,index){known[String(row[0])]=true;if(row[2]==='snack'&&isCornStickName_(row[1])&&row[3]!=='條')catalog.getRange(index+2,4,1,1).setValues([['條']]);});
   var missing=INITIAL_SUPPLIES.filter(function(item){return !known[item.id];}).map(function(item){return [item.id,item.name,item.kind,item.unit,true,item.category||'',sheetText_(item.flavor||'')];});
   if(missing.length)catalog.getRange(catalog.getLastRow()+1,1,missing.length,7).setValues(missing);
   var history = ss.getSheetByName(SHEETS.supplyHistory);
@@ -1589,7 +1593,7 @@ function supplyEvents_(ss) {
     var type = String(row[2]), quantity = quantity_(row[5], ['restock','expiry-set'].indexOf(type) < 0), stamp = iso_(row[1]);
     var expiry = row[9] instanceof Date ? supplyToday_(row[9].toISOString()) : String(row[9] || '');
     if (['count','restock','expiry-close','expiry-set'].indexOf(type) < 0 || quantity === null || !stamp || (expiry && !validSupplyExpiry_(expiry)) || (type === 'expiry-close' && (!row[10] || quantity !== 0)) || (type === 'expiry-set' && (!expiry || !row[10]))) throw new Error('Invalid supply history');
-    return { id: String(row[0]), supplyId: String(row[3]), type: type, quantity: quantity, createdAt: stamp, note: text_(row[6], 500), recorder: correctedSupplyRecorder_(String(row[0]),text_(row[7],80),corrections), expiresOn: expiry || null, batchId: String(row[10] || '') || null };
+    return { id: String(row[0]), supplyId: String(row[3]), type: type, quantity: quantity, createdAt: stamp, note: text_(row[6], 500), recorder: correctedSupplyRecorder_(String(row[0]),text_(row[7],80),corrections), expiresOn: expiry || null, batchId: String(row[10] || '') || null, ...(isCornStickName_(row[4]) ? {unit: cornStickEventUnit_(String(row[0]))} : {}) };
   });
 }
 
@@ -1621,12 +1625,20 @@ function openSupplyBatches_(supplyId, events) {
 }
 
 function supplyInventory_(supplies, events) {
-  var balances=Object.create(null);
+  var balances=Object.create(null),cornIds=Object.create(null),bagHistory=Object.create(null);
+  supplies.filter(function(item){return item.kind==='snack'&&isCornStickName_(item.name);}).forEach(function(item){cornIds[item.id]=true;});
+  events.forEach(function(event){
+    if(cornIds[event.supplyId]&&['count','restock'].indexOf(event.type)>=0&&cornStickEventUnit_(event.id)==='包')bagHistory[event.supplyId]=true;
+  });
   events.map(function(event,index){return {event:event,index:index};}).sort(function(a,b){return Date.parse(a.event.createdAt)-Date.parse(b.event.createdAt)||a.index-b.index;}).forEach(function(row){
     var event=row.event;if(event.type!=='count'&&event.type!=='restock')return;
+    if(cornIds[event.supplyId]&&cornStickEventUnit_(event.id)==='包')return;
     var state=balances[event.supplyId]||{stock:null,lastCountAt:null,lastArrivalAt:null};
     if(event.type==='count'){state.stock=event.quantity;state.lastCountAt=event.createdAt;}
-    else{state.stock=(state.stock===null?0:state.stock)+event.quantity;state.lastArrivalAt=event.createdAt;}
+    else{
+      if(state.stock!==null||!bagHistory[event.supplyId])state.stock=(state.stock===null?0:state.stock)+event.quantity;
+      state.lastArrivalAt=event.createdAt;
+    }
     balances[event.supplyId]=state;
   });
   return supplies.map(function(item){

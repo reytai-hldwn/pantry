@@ -33,12 +33,13 @@ try{for(const width of [1440,390]){
  const countPage=async()=>{hold=false;await page.goto(base+'/#count');await page.waitForSelector('#count-form [name=milk]');};
  await countPage();
  for(const kind of ['drink','snack']){
-  if(kind==='snack'){await page.reload();await page.waitForSelector('[data-action=count-kind][data-id=snack]');await page.locator('[data-action=count-kind][data-id=snack]').click();await page.waitForSelector('[data-supply-count][name=corn-stick]');assert.match(await page.locator('[data-count-item="corn-stick"]').innerText(),/量販包以整個大包為 1 包/);assert.match(await page.locator('[data-count-item="corn-stick"] .count-unit').innerText(),/包/);}
+  if(kind==='snack'){await page.reload();await page.waitForSelector('[data-action=count-kind][data-id=snack]');await page.locator('[data-action=count-kind][data-id=snack]').click();await page.waitForSelector('[data-supply-count][name=corn-stick]');assert.match(await page.locator('[data-count-item="corn-stick"]').innerText(),/以單條登記/);assert.equal(await page.locator('[data-count-item="corn-stick"] .count-unit').innerText(),'條');}
   const form=page.locator(kind==='drink'?'#count-form':'#supply-count-form'),field=form.locator(kind==='drink'?'[name=milk]':'[data-supply-count][name=corn-stick]');
   const stockCell = field.locator('xpath=ancestor::tr/td[2]');
   const priorTime = stockCell.locator('time');
-  assert.equal(await stockCell.locator('.muted').innerText(),kind==='drink'?'11 包':'7 包');
-  assert.equal(await priorTime.innerText(),kind==='drink'?'2020/01/01 08:00':'2020/01/02 02:34','shows the previous actual count in Taipei time after later arrivals');
+  assert.equal(await stockCell.locator('.muted').innerText(),kind==='drink'?'11 包':'尚未確認');
+  if(kind==='drink')assert.equal(await priorTime.innerText(),'2020/01/01 08:00','shows the previous actual count in Taipei time after later arrivals');
+  else assert.equal(await priorTime.count(),0,'bag counts do not establish stick inventory');
   if(kind==='snack'){
    const arrivalOnly = form.locator('[data-count-item="supply-snack-01"] .supply-count-stock');
    assert.equal(await arrivalOnly.locator('.muted').innerText(),'3 包');
@@ -48,7 +49,7 @@ try{for(const width of [1440,390]){
   }
   await form.locator('[name=recorder]').fill('速度測試');await field.fill('4');const reading=gate(),start=Date.now();await form.locator('button[type=submit]').click();
   await page.waitForFunction(()=>!document.querySelector('form[aria-busy=true]')&&/已完成|已保存/.test(document.querySelector('#toast').innerText),{},{timeout:4000});timings[kind]=Date.now()-start;
-  assert.equal(await stockCell.locator('.muted').innerText(),'4 包');
+  assert.equal(await stockCell.locator('.muted').innerText(),kind==='drink'?'4 包':'4 條');
   assert.doesNotMatch(await priorTime.getAttribute('datetime'),/^2020-/,'a saved count immediately updates the time');
   await reading;assert.ok(release,'full history read is still held after success feedback');await field.fill('17');await finish();await page.waitForTimeout(150);assert.equal(await field.inputValue(),'17','background synchronization preserves the next unsaved count');
   assert.equal(posts.at(-1).data.entries[0].quantity,4);assert.equal(posts.filter(row=>row.operation===(kind==='drink'?'stocktake':'supply-stocktake')).length,1);
@@ -60,7 +61,7 @@ try{for(const width of [1440,390]){
  }
  await page.locator('#navigation [data-view=products]').click();await page.waitForSelector('[data-action=warehouse-kind][data-id=coffee]');await page.locator('[data-action=warehouse-kind][data-id=coffee]').click();await page.locator('[data-action=coffee-count]').click();
  const coffee=page.locator('#coffee-stocktake-form');await coffee.locator('[name=recorder]').fill('速度測試');await coffee.locator('[name=bags]').fill('2');const reading=gate(),start=Date.now();await coffee.locator('button[type=submit]').click();await page.waitForSelector('dialog[open]',{state:'hidden',timeout:4000});timings.coffee=Date.now()-start;await reading;assert.ok(release);assert.equal(await page.locator('[data-coffee-stock]').innerText(),'2 包');await finish();
- assert.equal(b.sheets.SupplyCatalog.rows.find(row=>row[0]==='corn-stick')[3],'包');assert.deepEqual(errors,[]);
- console.log(`PASS ${width}: confirmed counts finish before held full reads; new input survives synchronization; whole-bag unit is correct. Mock feedback ms: ${JSON.stringify(timings)}`);
+ assert.equal(b.sheets.SupplyCatalog.rows.find(row=>row[0]==='corn-stick')[3],'條');assert.deepEqual(errors,[]);
+ console.log(`PASS ${width}: confirmed counts finish before held full reads; new input survives synchronization; single-stick unit is correct. Mock feedback ms: ${JSON.stringify(timings)}`);
  hold=false;release?.();await context.close();
 }}finally{await browser.close();await new Promise(resolve=>server.close(resolve));}

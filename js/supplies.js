@@ -5,9 +5,52 @@ import { matchesInventoryStockFilter } from './restock-preferences.js';
 export const SUPPLY_KINDS = Object.freeze({ snack:'零食', frozen:'冰品', noodle: '泡麵', toner: '碳粉' });
 export const SNACK_CATEGORIES = Object.freeze(['太空包','巧克力','甜/鹹餅乾','健康零食','蛋白質零食','其他鹹食','其他甜食']);
 export const canonicalSnackCategory = category => ['燕麥棒/餅','燕麥棒／餅','燕麥棒'].includes(category) ? '健康零食' : category;
-export const cornStickBulkPack = name => /^鴻津玉米棒(?:[（(]量販包[）)])?$/.test(String(name||'').normalize('NFKC').replace(/\s+/g,''));
-export const canonicalSupplyUnit = (kind,name,unit) => kind==='snack'&&cornStickBulkPack(name)?'包':unit;
-export const snackPackHint = item => (cornStickBulkPack(item?.name)||/[（(]量販包[）)]/.test(item?.name||'')) ? '量販包以整個大包為 1 包，不換算內袋數量。' : '';
+export const isCornStick = item => item?.kind === 'snack' &&
+  /^鴻津玉米棒(?:\(量販包\))?$/.test(String(item.name || '').normalize('NFKC').replace(/\s+/g, ''));
+export const CORN_STICK_REQUEST_PREFIX = 'corn-stick-unit-';
+export const canonicalSupplyUnit = (kind, name, unit) => isCornStick({ kind, name }) ? '條' : unit;
+export function snackPackHint(item) {
+  if (isCornStick(item)) return '以單條登記，舊包數保留在異動紀錄。';
+  return /[（(]量販包[）)]/.test(item?.name || '') ? '量販包以整個大包為 1 包，不換算內袋數量。' : '';
+}
+
+function cornStickEventUnit(event) {
+  return event.unit === '條' || String(event.id).startsWith(`website:${CORN_STICK_REQUEST_PREFIX}`) ? '條' : '包';
+}
+
+export function cornStickBalance(item, events) {
+  const history = events.filter(event => event.supplyId === item.id && event.accepted !== false &&
+    ['count', 'restock'].includes(event.type));
+  const hasBagHistory = history.some(event => cornStickEventUnit(event) === '包');
+  let stock = null, lastCountAt = null, lastArrivalAt = null;
+  for (const event of history.filter(event => cornStickEventUnit(event) === '條')
+    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))) {
+    if (event.type === 'count') {
+      stock = event.quantity;
+      lastCountAt = event.createdAt;
+    } else {
+      if (stock !== null || !hasBagHistory) stock = (stock ?? 0) + event.quantity;
+      lastArrivalAt = event.createdAt;
+    }
+  }
+  if (stock !== null && (!Number.isSafeInteger(stock) || stock < 0 || stock > 999999)) {
+    throw new Error('累計庫存超出上限，請核對紀錄。');
+  }
+  const reopen = item.autoArchived === true && stock === null;
+  if (!reopen && item.unit === '條' && item.stock === stock && (item.lastCountAt ?? null) === lastCountAt &&
+      (item.lastArrivalAt ?? null) === lastArrivalAt) return item;
+  return { ...item, unit: '條', stock, lastCountAt, lastArrivalAt, ...(reopen ? {active:true,autoArchived:false} : {}) };
+}
+
+function markCornStickEvents(supplies, events) {
+  const ids = new Set(supplies.filter(isCornStick).map(item => item.id));
+  if (!ids.size) return events;
+  return events.map(event => {
+    if (!ids.has(event.supplyId)) return event;
+    const unit = cornStickEventUnit(event);
+    return event.unit === unit ? event : { ...event, unit };
+  });
+}
 export const SNACK_UNITS = Object.freeze(['包','盒','條','個','顆']);
 export const FROZEN_UNITS = Object.freeze(['支','杯','盒','包','個','桶']);
 export const supplyUnits = kind => kind==='snack'?SNACK_UNITS:kind==='frozen'?FROZEN_UNITS:kind==='noodle'?['杯','碗']:kind==='toner'?['盒']:[];
@@ -62,9 +105,14 @@ export function prepareSupplyCatalog(data) {
   if((data.supplies!=null&&!Array.isArray(data.supplies))||(data.supplyEvents!=null&&!Array.isArray(data.supplyEvents)))throw new Error('本機庫存或紀錄格式不正確，原資料已保留。');
   const legacy={'supply-snack-01':'多力多滋雙倍起司口味','supply-snack-02':'多力多滋香菜口味','supply-snack-03':'樂事海苔口味','supply-snack-04':'華元蚵仔煎'};
   let changed=false;
+  const history = Array.isArray(data.supplyEvents) ? data.supplyEvents : [];
   const supplies=(Array.isArray(data.supplies)?data.supplies:[]).map(item=>{
     const seed=SUPPLY_CATALOG.find(seed=>seed.id===item.id);
-    if(canonicalSupplyUnit(item.kind,item.name,item.unit)!==item.unit){changed=true;item={...item,unit:'包'};}
+    if (isCornStick(item)) {
+      const converted = cornStickBalance(item, history);
+      changed ||= converted !== item;
+      item = converted;
+    }
     if(item.kind==='snack'&&canonicalSnackCategory(item.category)!==item.category){
       changed=true;item={...item,category:canonicalSnackCategory(item.category)};
     }
@@ -75,8 +123,10 @@ export function prepareSupplyCatalog(data) {
     return item;
   });
   const missing=SUPPLY_CATALOG.filter(seed=>!supplies.some(item=>item.id===seed.id));
+  const supplyEvents = markCornStickEvents(supplies, history);
+  changed ||= supplyEvents.some((event, index) => event !== history[index]);
   if(!changed&&!missing.length&&Array.isArray(data.supplies)&&Array.isArray(data.supplyEvents))return data;
-  return {...data,supplies:[...supplies,...missing.map(item=>({...item,stock:null,lastCountAt:null}))],supplyEvents:Array.isArray(data.supplyEvents)?data.supplyEvents:[]};
+  return {...data,supplies:[...supplies,...missing.map(item=>({...item,stock:null,lastCountAt:null}))],supplyEvents};
 }
 
 export function supplyToday(now = new Date()) {
@@ -148,18 +198,19 @@ export function normalizeSupplyWarehouse(payload) {
     ids.add(item.id);
     return supplyAvailability({id:item.id,name:item.name.trim(),kind:item.kind,unit:canonicalSupplyUnit(item.kind,item.name,item.unit),active:item.active,...(item.autoArchived===true?{autoArchived:true}:{}),stock:item.stock,lastCountAt:item.lastCountAt,...(item.lastArrivalAt?{lastArrivalAt:validDate(item.lastArrivalAt)?item.lastArrivalAt:(()=>{throw new Error('入庫時間不正確。');})()}:{}),...(item.kind==='snack'?{category:canonicalSnackCategory(item.category),flavor:item.flavor||''}: {})});
   });
-  const supplyEvents=payload.supplyEvents.map(event=>{
+  const supplyEvents=markCornStickEvents(supplies,payload.supplyEvents.map(event=>{
     if(!event||typeof event.id!=='string'||!event.id||event.id.length>240||eventIds.has(event.id)||!ids.has(event.supplyId)||!['count','restock','expiry-close','expiry-set'].includes(event.type)||!validCount(event.quantity)||(['restock','expiry-set'].includes(event.type)&&event.quantity===0)||(event.type==='expiry-close'&&event.quantity!==0)||!validDate(event.createdAt)||event.accepted===false||typeof event.recorder!=='string'||!event.recorder.trim()||event.recorder.length>80||typeof event.note!=='string'||event.note.length>500)throw new Error('零食、冰品、泡麵與碳粉異動紀錄不正確。');
     const expiresOn=event.expiresOn||null,batchId=event.batchId||null;
     if(expiresOn!==null&&!validSupplyExpiry(expiresOn))throw new Error('保存期限格式不正確。');
     if(['expiry-close','expiry-set'].includes(event.type)&&(typeof batchId!=='string'||batchId.length>240||!batchId))throw new Error('效期批次代號不正確。');
     if(event.type==='expiry-set'&&(!expiresOn||!supplySupportsExpiryHistory(supplies.find(item=>item.id===event.supplyId)?.kind)))throw new Error('效期補登資料不正確。');
     eventIds.add(event.id);
-    return {id:event.id,supplyId:event.supplyId,type:event.type,quantity:event.quantity,createdAt:event.createdAt,recorder:event.recorder,note:event.note,expiresOn,batchId};
-  });
+    return {id:event.id,supplyId:event.supplyId,type:event.type,quantity:event.quantity,createdAt:event.createdAt,recorder:event.recorder,note:event.note,expiresOn,batchId,...(event.unit==='條'?{unit:event.unit}:{})};
+  }));
   for(const event of supplyEvents.filter(event=>event.type==='expiry-close')){
     const batch=supplyEvents.find(batch=>batch.id===event.batchId&&['restock','expiry-set'].includes(batch.type)&&batch.supplyId===event.supplyId);
     if(!batch||!supplySupportsExpiryHistory(supplies.find(item=>item.id===event.supplyId)?.kind))throw new Error('效期批次來源不正確。');
   }
-  return {supplies,supplyEvents,supplyEntryVersion:1,supplyFrozenVersion:payload.supplyEntry.frozenVersion===1?1:0,snackCatalogVersion:payload.supplyEntry.snackCatalogVersion===1?1:0,supplyExpiryVersion:payload.supplyEntry.expiryVersion===1?1:0,supplyExpirySetVersion:payload.supplyEntry.expirySetVersion===1?1:0,snackFlavorVersion:payload.supplyEntry.snackFlavorVersion===1?1:0,supplySnackVersion:payload.supplyEntry.snackVersion===1?1:0,supplySnackPolicyVersion:payload.supplyEntry.snackPolicyVersion===2?2:0};
+  const currentSupplies = supplies.map(item => isCornStick(item) ? supplyAvailability(cornStickBalance(item, supplyEvents)) : item);
+  return {supplies:currentSupplies,supplyEvents,supplyEntryVersion:1,supplyFrozenVersion:payload.supplyEntry.frozenVersion===1?1:0,snackCatalogVersion:payload.supplyEntry.snackCatalogVersion===1?1:0,supplyExpiryVersion:payload.supplyEntry.expiryVersion===1?1:0,supplyExpirySetVersion:payload.supplyEntry.expirySetVersion===1?1:0,snackFlavorVersion:payload.supplyEntry.snackFlavorVersion===1?1:0,supplySnackVersion:payload.supplyEntry.snackVersion===1?1:0,supplySnackPolicyVersion:payload.supplyEntry.snackPolicyVersion===2?2:0};
 }

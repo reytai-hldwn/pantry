@@ -3,7 +3,7 @@ import { coffeeReceiptInput, normalizeCoffeeReceipts, coffeeKey } from './coffee
 import { CATEGORIES_ORDER, canonicalDrinkCategory, canonicalDrinkName, canonicalDrinkPackaging, canonicalDrinkUnit } from './catalog.js';
 import { blankData, getWeeklyPopularity, safeUrl } from './domain.js';
 import { submitGoogleWebsiteCommand } from './google-write.js';
-import { normalizeSupplyWarehouse, canonicalSupplyUnit, canonicalSnackCategory, SNACK_CATEGORIES, SNACK_UNITS, supplyUnits, supplyNeedsExpiry, validSupplyExpiry } from './supplies.js';
+import { normalizeSupplyWarehouse, canonicalSupplyUnit, canonicalSnackCategory, isCornStick, CORN_STICK_REQUEST_PREFIX, SNACK_CATEGORIES, SNACK_UNITS, supplyUnits, supplyNeedsExpiry, validSupplyExpiry } from './supplies.js';
 import { isLowStockItem, isOutOfStockItem, inventoryLowThreshold, matchesInventoryStockFilter, normalizeRestockPreferences, restockThreshold } from './restock-preferences.js';
 import { inventoryActivity, inventoryTotals, normalizeInventoryTotals } from './inventory-activity.js';
 
@@ -687,7 +687,9 @@ export class GoogleInventoryStore {
       const activityRow=row=>{
         if(!row||!['drink','snack','frozen','noodle','toner'].includes(row.kind)||!['count','restock'].includes(row.type))throw new Error('近期庫存紀錄格式不正確。');
         if(!(row.kind==='drink'?['包','瓶','罐']:supplyUnits(row.kind)).includes(row.unit))throw new Error('近期庫存單位不正確。');
-        return {id:textField(row.id,'紀錄代號',240),itemId:textField(row.itemId,'品項代號',160),kind:row.kind,...adminItemIdentity(row),flavor:textField(row.flavor||'','口味',80,false),quantity:googleQuantityField(row.quantity,'紀錄數量'),createdAt:googleDateField(row.createdAt,'紀錄時間'),type:row.type};
+        const identity = adminItemIdentity(row);
+        if (isCornStick(row) && String(row.id).startsWith(`website:${CORN_STICK_REQUEST_PREFIX}`)) identity.unit = '條';
+        return {id:textField(row.id,'紀錄代號',240),itemId:textField(row.itemId,'品項代號',160),kind:row.kind,...identity,flavor:textField(row.flavor||'','口味',80,false),quantity:googleQuantityField(row.quantity,'紀錄數量'),createdAt:googleDateField(row.createdAt,'紀錄時間'),type:row.type};
       };
       const arrivals=value.recentArrivals===undefined?[]:value.recentArrivals,counts=value.recentCounts===undefined?[]:value.recentCounts;
       if(!Array.isArray(arrivals)||arrivals.length>12||!Array.isArray(counts)||counts.length>5)throw new Error('近期庫存摘要過多。');
@@ -704,7 +706,14 @@ export class GoogleInventoryStore {
         this.restockAuthVersion=value.restockAuthVersion;
       }
       if(this.zeroStockVersion===1)this.websiteEntryVersion=1;
-      this.adminSummary={inventoryTotalsVersion:value.inventoryTotalsVersion===1?1:0,inventoryTotals:value.inventoryTotalsVersion===1?normalizeInventoryTotals(value.inventoryTotals):[],totalDrinks:value.totalDrinks,pendingWishes:value.pendingWishes,lowItems,outOfStockItems,manualSnackItems,restockItems:marked,activityVersion:value.activityVersion===1?1:0,recentArrivals,recentCounts,snapshotAt:googleDateField(value.snapshotAt,'摘要時間',true)};this.adminSummaryReadAt=this.now();
+      const totals = value.inventoryTotalsVersion === 1 ? normalizeInventoryTotals(value.inventoryTotals) : [];
+      const snackTotals = totals.find(group => group.kind === 'snack')?.items || [];
+      const legacyCornStick = item => isCornStick({kind:'snack',name:item.name}) && item.unit === '包';
+      const hasLegacyCornBalance = snackTotals.some(legacyCornStick) ||
+        [...lowItems, ...outOfStockItems, ...marked].some(item => item.kind === 'snack' && legacyCornStick(item));
+      this.adminSummary = hasLegacyCornBalance ? this.warehouseSummary(await this.fetchWarehouseSnapshot(force)) :
+        {inventoryTotalsVersion:value.inventoryTotalsVersion===1?1:0,inventoryTotals:totals,totalDrinks:value.totalDrinks,pendingWishes:value.pendingWishes,lowItems,outOfStockItems,manualSnackItems,restockItems:marked,activityVersion:value.activityVersion===1?1:0,recentArrivals,recentCounts,snapshotAt:googleDateField(value.snapshotAt,'摘要時間',true)};
+      this.adminSummaryReadAt=this.now();
       return this.adminSummary;
     })();
     try { return await this.adminSummaryRequest; } finally { this.adminSummaryRequest=null; }
@@ -805,6 +814,13 @@ export class GoogleInventoryStore {
       if(!this.supportsNamedRestock)throw new Error('請更新原 Google 部署，啟用姓名登記補貨設定。');
       data.recorder=credential.name;
     }
+    const cornStickEntries = operation === 'supply-arrival' || operation === 'new-arrival' ? [data]
+      : operation === 'supply-stocktake' || operation === 'batch-arrival' ? data.entries || [] : [];
+    const cornStickWrite = cornStickEntries.some(entry => isCornStick(entry) ||
+      (entry?.supplyId && this.supplies.some(item => item.id === entry.supplyId && isCornStick(item))));
+    // The currently deployed script preserves the request ID in the history
+    // row. Keep new stick counts distinguishable from old whole-bag counts.
+    if (cornStickWrite) data = { ...data, cornStickUnit: '條' };
     const key = `holdwin-google-pending-v1:${endpoint}:${operation}`;
     let signature = JSON.stringify(data);
     let storage, pending;
@@ -844,7 +860,7 @@ export class GoogleInventoryStore {
       else throw new Error('上一筆送出仍待確認。請先保留原內容重試，避免重複入庫。');
     }
     const newRequest=!pending;
-    if (!pending) pending = { requestId: this.createRequestId(), signature };
+    if (!pending) pending = { requestId: (cornStickWrite ? CORN_STICK_REQUEST_PREFIX : '') + this.createRequestId(), signature };
     if (!/^[A-Za-z0-9_-]{20,100}$/.test(pending.requestId)) throw new Error('無法建立這次送出紀錄，請重新開啟網站。');
     try { storage.setItem(key, JSON.stringify(pending)); }
     catch { throw new Error('目前無法保留送出紀錄，資料尚未送出。'); }
@@ -897,6 +913,7 @@ export class GoogleInventoryStore {
         }else{
           const value=normalizeSupplyWarehouse({supplyEntry:{version:1,snackVersion:1,snackPolicyVersion:2,frozenVersion:1},supplies:patch.items,supplyEvents:patch.events});
           items=value.supplies;events=value.supplyEvents;
+          if (events.some(event => event.unit === '包')) return false;
         }
         if(new Set(items.map(item=>item.id)).size!==expected.size||new Set(events.map(event=>event[idField])).size!==expected.size)return false;
         const updates=new Map(items.map(item=>[item.id,item])),eventIds=new Set(events.map(event=>event.id));

@@ -2,7 +2,7 @@ import { drinkAvailability } from './drink-availability.js';
 import { coffeeReceiptInput, coffeeInventory, coffeeKey, coffeeToday } from './coffee.js';
 import { applyInitialStocktake, blankData, safeUrl, uid } from './domain.js';
 import { CATEGORIES_ORDER, DEFAULT_CASE_SIZE, createCompanyData, prepareCompanyCatalog } from './catalog.js';
-import { initialSupplies, prepareSupplyCatalog, supplyAvailability, canonicalSupplyUnit, canonicalSnackCategory, SNACK_CATEGORIES, SNACK_UNITS, supplyUnits, supplyBatches, supplyNeedsExpiry, supplySupportsExpiryHistory, supplyToday, validSupplyExpiry } from './supplies.js';
+import { initialSupplies, prepareSupplyCatalog, supplyAvailability, canonicalSupplyUnit, isCornStick, canonicalSnackCategory, SNACK_CATEGORIES, SNACK_UNITS, supplyUnits, supplyBatches, supplyNeedsExpiry, supplySupportsExpiryHistory, supplyToday, validSupplyExpiry } from './supplies.js';
 import { recordedBalances } from './inventory-activity.js';
 import { supplyNameKey, supplyLabel } from './supplies.js';
 import { RESTOCK_MODES, hasRecordedStock, isLowStockItem, restockPreferenceMode } from './restock-preferences.js';
@@ -289,7 +289,7 @@ export class InventoryStore {
       if(typeof entry.note!=='string'||entry.note.length>500)throw new Error('入庫備註最多 500 字。');
       if(entry.type==='restock'&&item.kind==='snack'&&entry.expiresOn!=null&&entry.expiresOn!==''&&!validSupplyExpiry(entry.expiresOn))throw new Error('零食保存期限格式不正確。');
       if(entry.type==='restock'&&supplyNeedsExpiry(item.kind)&&(!validSupplyExpiry(entry.expiresOn)||entry.expiresOn<supplyToday()))throw new Error('食品入庫請填寫有效的保存期限，不能早於今天。');
-      next.supplyEvents.push({id:uid(),supplyId:item.id,type:entry.type,quantity:entry.quantity,createdAt:stamp,recorder:recorder.trim(),note:entry.note,expiresOn:entry.type==='restock'&&supplySupportsExpiryHistory(item.kind)?entry.expiresOn||null:null,batchId:entry.batchId||null});
+      next.supplyEvents.push({id:uid(),supplyId:item.id,type:entry.type,...(isCornStick(item)?{unit:'條'}:{}),quantity:entry.quantity,createdAt:stamp,recorder:recorder.trim(),note:entry.note,expiresOn:entry.type==='restock'&&supplySupportsExpiryHistory(item.kind)?entry.expiresOn||null:null,batchId:entry.batchId||null});
       if(entry.type==='count'){item.stock=entry.quantity;item.lastCountAt=stamp;}
       else if(entry.type==='restock'){item.stock=(item.stock??0)+entry.quantity;item.lastArrivalAt=stamp;}
     }
@@ -329,7 +329,7 @@ export class InventoryStore {
     } else {
       next.supplies ||= initialSupplies();next.supplyEvents ||= [];
       next.supplies.push({id,name:name.trim(),kind,unit,active:true,stock:null,lastCountAt:null,...(kind==='snack'?{category,flavor:flavor.trim()}: {})});
-      next.supplyEvents.push({id:uid(),supplyId:id,type:'restock',quantity,createdAt:stamp,recorder:recorder.trim(),note:note||'新品到貨入庫',expiresOn:expiresOn||null,batchId:null});
+      next.supplyEvents.push({id:uid(),supplyId:id,type:'restock',...(isCornStick({kind,name})?{unit:'條'}:{}),quantity,createdAt:stamp,recorder:recorder.trim(),note:note||'新品到貨入庫',expiresOn:expiresOn||null,batchId:null});
     }
     await this.save(next);
     return {id,quantity};

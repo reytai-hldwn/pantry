@@ -67,13 +67,33 @@ test('oversized count receipts fall back without violating the Sheets result-cel
  const receipt=b.send('stocktake',{entries,recorder:'測試'});assert.equal(receipt.state,'accepted');assert.equal(receipt.result.stocktake,undefined);assert.ok(JSON.stringify(receipt.result).length<40000);assert.equal(receipt.result.count,300);
 });
 
-test('鴻津玉米棒 uses whole bulk bags across backend, client and local migration without converting historical amounts',async()=>{
+test('鴻津玉米棒 counts individual sticks and preserves bag history, including with the older backend',async()=>{
  const b=websiteBackend();b.ctx.ensureSupplyStorage_(b.ss);
- const item=['corn-stick','鴻津玉米棒','snack','條',true,'其他鹹食','原味'];b.sheets.SupplyCatalog.rows.push(item);b.sheets.SupplyCatalog.rows.push(['other-stick','其他玉米棒','snack','條',true,'其他鹹食','']);
+ const item=['corn-stick','鴻津玉米棒','snack','包',true,'其他鹹食','原味'];b.sheets.SupplyCatalog.rows.push(item);b.sheets.SupplyCatalog.rows.push(['other-stick','其他玉米棒','snack','條',true,'其他鹹食','']);
  b.sheets.SupplyHistory.rows.push(['original-corn','2026-01-01T00:00:00Z','count','corn-stick','鴻津玉米棒',7,'原數量','原登記','採計','','']);
- const c=client(b);await c.store.openWarehouse();assert.equal(c.store.supplies.find(x=>x.id==='corn-stick').unit,'包');assert.match(snackPackHint(c.store.supplies.find(x=>x.id==='corn-stick')),/整個大包為 1 包/);assert.equal(c.store.supplies.find(x=>x.id==='other-stick').unit,'條');
- const old=plain(b.sheets.SupplyHistory.rows[1]);await c.store.submitSupplyStocktake([{supplyId:'corn-stick',quantity:5}],'測試');assert.equal(item[3],'包');assert.deepEqual(b.sheets.SupplyHistory.rows[1],old);assert.equal(c.store.supplies.find(x=>x.id==='corn-stick').stock,5);
- const data={supplies:[{id:'corn-stick',kind:'snack',name:'鴻津玉米棒',unit:'條',category:'其他鹹食',stock:7}],supplyEvents:[{id:'keep',quantity:7}]};const prepared=prepareSupplyCatalog(data);assert.equal(prepared.supplies.find(x=>x.id==='corn-stick').unit,'包');assert.equal(prepared.supplies.find(x=>x.id==='corn-stick').stock,7);assert.equal(prepared.supplyEvents,data.supplyEvents);
+ const c=client(b,{readPublicData:async()=>{
+  const value=plain(b.ctx.buildWarehouseData_());
+  const corn=value.supplies.find(x=>x.id==='corn-stick');
+  const records=value.supplyEvents.filter(event=>event.supplyId===corn.id);
+  for(const record of records)delete record.unit;
+  const last=records.at(-1);
+  Object.assign(corn,{unit:'包',stock:last.quantity,lastCountAt:last.createdAt});
+  return value;
+ }});
+ const corn=()=>c.store.supplies.find(x=>x.id==='corn-stick');
+ await c.store.openWarehouse();assert.equal(corn().unit,'條');assert.equal(corn().stock,null);assert.equal(corn().lastCountAt,null);
+ assert.match(snackPackHint(corn()),/以單條登記/);assert.equal(c.store.supplies.find(x=>x.id==='other-stick').unit,'條');
+ const old=plain(b.sheets.SupplyHistory.rows[1]);
+ await c.store.submitSupplyStocktake([{supplyId:'corn-stick',quantity:5}],'測試');
+ assert.match(c.commands[0].requestId,/^corn-stick-unit-/);assert.equal(item[3],'條');
+ assert.deepEqual(b.sheets.SupplyHistory.rows[1],old);assert.equal(corn().stock,5);
+ await c.store.readWarehouse();assert.equal(corn().stock,5);
+ assert.deepEqual(c.store.supplyEvents.filter(x=>x.supplyId==='corn-stick').map(x=>[x.unit,x.quantity]),[['包',7],['條',5]]);
+ const data={supplies:[{id:'corn-stick',kind:'snack',name:'鴻津玉米棒',unit:'包',category:'其他鹹食',stock:7}],supplyEvents:[{id:'keep',supplyId:'corn-stick',type:'count',quantity:7,createdAt:old[1]}]};
+ const prepared=prepareSupplyCatalog(data);
+ assert.equal(prepared.supplies.find(x=>x.id==='corn-stick').unit,'條');
+ assert.equal(prepared.supplies.find(x=>x.id==='corn-stick').stock,null);
+ assert.deepEqual(prepared.supplyEvents,[{...data.supplyEvents[0],unit:'包'}]);
 });
 
 test('recovery returns the current server balance when another arrival followed an interrupted count',async()=>{
@@ -112,10 +132,11 @@ test('grouped history scans retain per-item same-time order and rejected drink-e
  const supply=plain(b.ctx.supplyInventory_(supplies,rows.filter(row=>row.accepted)));assert.equal(supply[0].stock,10);assert.equal(supply[1].stock,5);assert.equal(supply[2].stock,null);
 });
 
-test('new corn-stick arrivals and catalog creation persist the same whole-bag unit and retry safely',()=>{
+test('new corn-stick arrivals and catalog creation persist the single-stick unit and retry safely',()=>{
  for(const operation of ['new-arrival','snack-catalog-batch']){
-  const b=websiteBackend(),requestId=randomUUID(),entry={name:'鴻津玉米棒',unit:'條',flavor:'',category:'其他鹹食'},data=operation==='new-arrival'?{...entry,kind:'snack',quantity:2,recorder:'測試'}:{entries:[entry],recorder:'測試'};
+  const b=websiteBackend(),requestId='corn-stick-unit-'+randomUUID(),entry={name:'鴻津玉米棒',unit:'包',flavor:'',category:'其他鹹食'},data=operation==='new-arrival'?{...entry,kind:'snack',quantity:2,recorder:'測試'}:{entries:[entry],recorder:'測試'};
   const accepted=b.send(operation,data,requestId);assert.equal(accepted.state,'accepted');assert.deepEqual(b.send(operation,data,requestId),accepted);
-  const item=b.sheets.SupplyCatalog.rows.find(row=>row[1]==='鴻津玉米棒');assert.equal(item[3],'包');assert.equal(b.sheets.SupplyCatalog.rows.filter(row=>row[1]==='鴻津玉米棒').length,1);
+  const item=b.sheets.SupplyCatalog.rows.find(row=>row[1]==='鴻津玉米棒');assert.equal(item[3],'條');assert.equal(b.sheets.SupplyCatalog.rows.filter(row=>row[1]==='鴻津玉米棒').length,1);
+  assert.equal(b.ctx.buildWarehouseData_().supplies.find(x=>x.id===item[0]).stock,operation==='new-arrival'?2:null);
  }
 });

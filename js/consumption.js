@@ -13,7 +13,7 @@ export function buildConsumptionRecords({drinks=[],supplies=[],events=[],supplyE
   }
   for(const [index,event] of [...events,...supplyEvents].entries()){
     const kind=event.drinkId?'drink':supplyKinds.get(event.supplyId),row=rows.get(`${kind}:${event.drinkId||event.supplyId}`),stamp=Date.parse(event.createdAt);
-    if(!row||event.accepted===false||!['count','restock'].includes(event.type)||!Number.isFinite(stamp)||stamp>until)continue;
+    if(!row||event.accepted===false||(event.supplyId&&event.unit&&event.unit!==row.unit)||!['count','restock'].includes(event.type)||!Number.isFinite(stamp)||stamp>until)continue;
     row.timeline.push({event,index,stamp});
   }
   for(const row of rows.values()){
