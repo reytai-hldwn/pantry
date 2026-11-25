@@ -1,3 +1,4 @@
+import { canonicalDrinkName, canonicalDrinkUnit } from './catalog.js';
 import { SNACK_UNITS, FROZEN_UNITS } from './supplies.js';
 import { workingDaysBetween, WORKWEEK_DAYS } from './workdays.js';
 /** Aggregate warehouse activity; counts are actual counts, never arrival baselines. */
@@ -59,7 +60,10 @@ export function normalizeInventoryTotals(groups) {
     seen.add(group.kind);const ids=new Set(),units={drink:['包','瓶','罐'],snack:SNACK_UNITS,frozen:FROZEN_UNITS,noodle:['杯','碗'],toner:['盒']};
     const items=group.items.map(item=>{
       if(!item||typeof item.id!=='string'||!item.id||item.id.length>160||ids.has(item.id)||typeof item.name!=='string'||!item.name||item.name.length>80||typeof item.flavor!=='string'||item.flavor.length>80||!units[group.kind].includes(item.unit)||!Number.isSafeInteger(item.stock)||item.stock<1||item.stock>999999||typeof item.active!=='boolean')throw new Error('分類庫存品項格式不正確。');
-      ids.add(item.id);return {id:item.id,name:item.name,flavor:item.flavor,unit:item.unit,stock:item.stock,active:item.active};
+      ids.add(item.id);
+      const name=group.kind==='drink'?canonicalDrinkName(item.name):item.name;
+      const unit=group.kind==='drink'?canonicalDrinkUnit(item.unit,name):item.unit;
+      return {id:item.id,name,flavor:item.flavor,unit,stock:item.stock,active:item.active};
     });
     return {kind:group.kind,unknownCount:group.unknownCount,items};
   });

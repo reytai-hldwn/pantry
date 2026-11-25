@@ -13,9 +13,19 @@ export function canonicalDrinkCategory(category, name = '') {
 
 export const fridgeDisplayName = name => name === '可爾必思開心成長160ml' ? '可爾必思' : name;
 
-/** The three confirmed cartons were first registered with unknown packaging. */
+export function canonicalDrinkName(name) {
+  return typeof name === 'string' && /^日月潭台茶十八號\s*\(\s*450\s*ml\s*\)$/i.test(name.normalize('NFKC'))
+    ? '日月潭台茶十八號' : name;
+}
+
+/** The confirmed cartons were first registered with unknown or incorrect packaging. */
 export function canonicalDrinkPackaging(packaging, name = '') {
+  if (name === '貝思寶兒檸檬紅茶' && ['其他', '寶特瓶'].includes(packaging)) return '鋁箔包';
   return packaging === '其他' && ['午后時光重乳奶茶','義美寶吉葡萄汁','波蜜蜂蜜檸檬'].includes(name) ? '鋁箔包' : packaging;
+}
+
+export function canonicalDrinkUnit(unit, name = '') {
+  return name === '貝思寶兒檸檬紅茶' && unit === '瓶' ? '包' : unit;
 }
 
 const COMPANY_CATALOG_ROWS = [
@@ -195,9 +205,12 @@ export function prepareCompanyCatalog(data) {
     throw new Error('庫存資料格式不正確，無法準備公司飲料清單。');
   }
   const correctedNames = prepared.drinks.map((source) => {
-    const category = canonicalDrinkCategory(source.category, source.name);
-    const packaging = canonicalDrinkPackaging(source.packaging, source.name);
-    const drink = category === source.category && packaging === source.packaging ? source : { ...source, category, packaging };
+    const name = canonicalDrinkName(source.name);
+    const category = canonicalDrinkCategory(source.category, name);
+    const packaging = canonicalDrinkPackaging(source.packaging, name);
+    const unit = canonicalDrinkUnit(source.unit, name);
+    const drink = name === source.name && category === source.category && packaging === source.packaging && unit === source.unit
+      ? source : { ...source, name, category, packaging, unit };
     if (drink.id === 'company-drink-07' && drink.name === '波利芭樂汁') return { ...drink, name: '波蜜芭樂汁' };
     if (drink.id === 'company-drink-14' && drink.name === '波蜜一日蔬果') return { ...drink, name: '一日蔬果100%蘋果柳橙蔬果汁' };
     if (drink.id === 'company-drink-22' && ['Milkiis水蜜桃', 'Miilkis水蜜桃'].includes(drink.name)) return { ...drink, name: 'Milkis水蜜桃' };

@@ -1817,7 +1817,13 @@ function catalog_(ss) {
     seen[id] = true;
     var perCase = quantity_(row[5], false);
     var threshold = quantity_(row[6], true);
-    return { id: id, name: name, category: canonicalDrinkCategory_(text_(row[2], 30),name), packaging: text_(row[3], 30), unit: ['包', '瓶', '罐'].indexOf(row[4]) >= 0 ? row[4] : '包', perCase: perCase, threshold: threshold === null ? 10 : threshold, active: row[7] !== false && String(row[7]).toLowerCase() !== 'false' };
+    var packaging = text_(row[3], 30);
+    var unit = ['包', '瓶', '罐'].indexOf(row[4]) >= 0 ? row[4] : '包';
+    if (name === '貝思寶兒檸檬紅茶') {
+      if (['其他', '寶特瓶'].indexOf(packaging) >= 0) packaging = '鋁箔包';
+      if (unit === '瓶') unit = '包';
+    }
+    return { id: id, name: name, category: canonicalDrinkCategory_(text_(row[2], 30),name), packaging: packaging, unit: unit, perCase: perCase, threshold: threshold === null ? 10 : threshold, active: row[7] !== false && String(row[7]).toLowerCase() !== 'false' };
   });
 }
 

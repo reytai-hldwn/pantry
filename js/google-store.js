@@ -1,6 +1,6 @@
 import { drinkAvailability } from './drink-availability.js';
 import { coffeeReceiptInput, normalizeCoffeeReceipts, coffeeKey } from './coffee.js';
-import { CATEGORIES_ORDER, canonicalDrinkCategory, canonicalDrinkPackaging } from './catalog.js';
+import { CATEGORIES_ORDER, canonicalDrinkCategory, canonicalDrinkName, canonicalDrinkPackaging, canonicalDrinkUnit } from './catalog.js';
 import { blankData, getWeeklyPopularity, safeUrl } from './domain.js';
 import { submitGoogleWebsiteCommand } from './google-write.js';
 import { normalizeSupplyWarehouse, canonicalSupplyUnit, canonicalSnackCategory, SNACK_CATEGORIES, SNACK_UNITS, supplyUnits, supplyNeedsExpiry, validSupplyExpiry } from './supplies.js';
@@ -200,12 +200,13 @@ export function normalizeGooglePublicData(payload, { warehouse = false } = {}) {
     const threshold = row.threshold === undefined ? 10 : row.threshold;
     if (!Number.isSafeInteger(threshold) || threshold < 0 || threshold > 999999) throw new Error('Google 提醒門檻格式不正確。');
     if (row.active !== undefined && typeof row.active !== 'boolean') throw new Error('Google 品項供應狀態格式不正確。');
+    const name = canonicalDrinkName(textField(row.name, '飲料名稱', 80));
     return (item=>warehouse?drinkAvailability(item):item)({
       id,
-      name: textField(row.name, '飲料名稱', 80),
-      category: canonicalDrinkCategory(textField(row.category, '飲料分類', 80), row.name),
-      packaging: canonicalDrinkPackaging(textField(row.packaging, '包裝形式', 80), row.name),
-      unit: row.unit,
+      name,
+      category: canonicalDrinkCategory(textField(row.category, '飲料分類', 80), name),
+      packaging: canonicalDrinkPackaging(textField(row.packaging, '包裝形式', 80), name),
+      unit: canonicalDrinkUnit(row.unit, name),
       perCase,
       threshold,
       active: row.active !== false,
@@ -297,8 +298,14 @@ function normalizeGooglePopularity(payload) {
     if (ids.has(id) || !['包','瓶','罐'].includes(row.unit) || !Number.isFinite(row.weeklyRate) || row.weeklyRate <= 0 ||
         !Number.isFinite(row.days) || row.days < 1 || !Number.isSafeInteger(row.samples) || row.samples < 1) throw new Error('Google 熱門品項格式不正確。');
     ids.add(id);
-    return {id,name:textField(row.name,'飲料名稱',80),unit:row.unit,weeklyRate:row.weeklyRate,days:row.days,samples:row.samples};
+    const name = canonicalDrinkName(textField(row.name,'飲料名稱',80));
+    return {id,name,unit:canonicalDrinkUnit(row.unit,name),weeklyRate:row.weeklyRate,days:row.days,samples:row.samples};
   })};
+}
+
+function adminItemIdentity(row) {
+  const name = textField(row.name, '品項名稱', 80);
+  return row.kind === 'drink' ? { name:canonicalDrinkName(name), unit:canonicalDrinkUnit(row.unit,name) } : { name, unit:row.unit };
 }
 
 export class GoogleInventoryStore {
@@ -642,9 +649,9 @@ export class GoogleInventoryStore {
         // Older deployments report every kind through ten; validate that envelope before applying current thresholds.
         if (!row || !['drink','snack','frozen','noodle','toner'].includes(row.kind) || !['normal','hold','replace','consider'].includes(row.mode) ||
             !(row.kind==='drink'?['包','瓶','罐']:supplyUnits(row.kind)).includes(row.unit) || !Number.isSafeInteger(row.stock) || row.stock < 0 || row.stock > 10) throw new Error('後台低庫存摘要格式不正確。');
-        const id=textField(row.id,'品項代號',160),name=textField(row.name,'品項名稱',80),key=`${row.kind}:${id}`;
+        const id=textField(row.id,'品項代號',160),key=`${row.kind}:${id}`;
         if(ids.has(key))throw new Error('後台摘要有重複品項。');ids.add(key);
-        return {id,name,kind:row.kind,unit:row.unit,stock:row.stock,mode:row.mode,flavor:row.flavor===undefined?'':textField(row.flavor,'口味',80,false)};
+        return {id,...adminItemIdentity(row),kind:row.kind,stock:row.stock,mode:row.mode,flavor:row.flavor===undefined?'':textField(row.flavor,'口味',80,false)};
       });
       const lowItems=legacyLowItems.filter(item=>inventoryLowThreshold(item.kind)!==null&&item.stock<=inventoryLowThreshold(item.kind)&&(item.stock>0||item.kind==='toner')&&(!['snack','frozen','noodle'].includes(item.kind)||item.mode==='consider')).sort((a,b)=>Number(b.mode==='consider')-Number(a.mode==='consider')||a.stock-b.stock);
       const empty=value.outOfStockItems===undefined?legacyLowItems.filter(item=>['drink','snack','frozen','noodle'].includes(item.kind)&&item.stock===0):value.outOfStockItems;
@@ -653,10 +660,10 @@ export class GoogleInventoryStore {
       const outOfStockItems=empty.map(row=>{
         if(!row||!['drink','snack','frozen','noodle'].includes(row.kind)||!['normal','hold','replace','consider'].includes(row.mode)||
             !(row.kind==='drink'?['包','瓶','罐']:supplyUnits(row.kind)).includes(row.unit)||row.stock!==0)throw new Error('後台零庫存摘要格式不正確。');
-        const id=textField(row.id,'品項代號',160),name=textField(row.name,'品項名稱',80),key=`${row.kind}:${id}`;
+        const id=textField(row.id,'品項代號',160),key=`${row.kind}:${id}`;
         if(emptyIds.has(key))throw new Error('後台零庫存摘要有重複品項。');emptyIds.add(key);
         if(row.zeroStockPending!==undefined&&typeof row.zeroStockPending!=='boolean')throw new Error('無庫存處理狀態不正確。');
-        return {id,name,kind:row.kind,unit:row.unit,stock:0,mode:row.mode,zeroStockPending:row.zeroStockPending===true,flavor:row.flavor===undefined?'':textField(row.flavor,'口味',80,false)};
+        return {id,...adminItemIdentity(row),kind:row.kind,stock:0,mode:row.mode,zeroStockPending:row.zeroStockPending===true,flavor:row.flavor===undefined?'':textField(row.flavor,'口味',80,false)};
       });
       const manual=value.manualSnackItems===undefined?[]:value.manualSnackItems;
       if(!Array.isArray(manual)||manual.length>1000)throw new Error('零食手動補貨摘要格式不正確。');
@@ -675,12 +682,12 @@ export class GoogleInventoryStore {
         if(!row||!['drink','snack','frozen','noodle','toner'].includes(row.kind)||row.mode!=='consider'||(row.stock!==null&&(!Number.isSafeInteger(row.stock)||row.stock<0||row.stock>999999)))throw new Error('補貨品項格式不正確。');
         const key=row.kind+':'+row.id;if(markedIds.has(key))throw new Error('補貨品項重複。');markedIds.add(key);
         if(!(row.kind==='drink'?['包','瓶','罐']:supplyUnits(row.kind)).includes(row.unit))throw new Error('補貨單位不正確。');
-        return {kind:row.kind,id:textField(row.id,'品項代號',160),name:textField(row.name,'品項名稱',80),flavor:textField(row.flavor||'','口味',80,false),unit:row.unit,stock:row.stock,mode:'consider'};
+        return {kind:row.kind,id:textField(row.id,'品項代號',160),...adminItemIdentity(row),flavor:textField(row.flavor||'','口味',80,false),stock:row.stock,mode:'consider'};
       });
       const activityRow=row=>{
         if(!row||!['drink','snack','frozen','noodle','toner'].includes(row.kind)||!['count','restock'].includes(row.type))throw new Error('近期庫存紀錄格式不正確。');
         if(!(row.kind==='drink'?['包','瓶','罐']:supplyUnits(row.kind)).includes(row.unit))throw new Error('近期庫存單位不正確。');
-        return {id:textField(row.id,'紀錄代號',240),itemId:textField(row.itemId,'品項代號',160),kind:row.kind,name:textField(row.name,'品名',80),flavor:textField(row.flavor||'','口味',80,false),unit:row.unit,quantity:googleQuantityField(row.quantity,'紀錄數量'),createdAt:googleDateField(row.createdAt,'紀錄時間'),type:row.type};
+        return {id:textField(row.id,'紀錄代號',240),itemId:textField(row.itemId,'品項代號',160),kind:row.kind,...adminItemIdentity(row),flavor:textField(row.flavor||'','口味',80,false),quantity:googleQuantityField(row.quantity,'紀錄數量'),createdAt:googleDateField(row.createdAt,'紀錄時間'),type:row.type};
       };
       const arrivals=value.recentArrivals===undefined?[]:value.recentArrivals,counts=value.recentCounts===undefined?[]:value.recentCounts;
       if(!Array.isArray(arrivals)||arrivals.length>12||!Array.isArray(counts)||counts.length>5)throw new Error('近期庫存摘要過多。');
