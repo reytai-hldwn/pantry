@@ -339,6 +339,7 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
   aspect-ratio: 1;
   align-items: center;
 }
+.gacha-snack-photo .snack-product-art img { object-position: center; }
 .gacha-snack-illustration { margin: 0; text-align: center; color: var(--muted); font-size: .7rem; }
 .gacha-snack-illustration img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; }
 .gacha-snack-illustration figcaption { margin-top: 3px; }
@@ -924,5 +925,5 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
 .history-tabs { margin-bottom: 14px; }
 .ranking-flavor { display: block; font-size: .86em; font-weight: 500; }
 @media (max-width: 660px) {
-  .popularity-cards[data-pantry-page-track] { grid-auto-columns: minmax(125px, 73%); }
+  .popularity-cards[data-pantry-page-track] { grid-auto-columns: 100%; }
 }

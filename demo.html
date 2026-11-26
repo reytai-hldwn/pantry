@@ -552,6 +552,7 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
   aspect-ratio: 1;
   align-items: center;
 }
+.gacha-snack-photo .snack-product-art img { object-position: center; }
 .gacha-snack-illustration { margin: 0; text-align: center; color: var(--muted); font-size: .7rem; }
 .gacha-snack-illustration img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; }
 .gacha-snack-illustration figcaption { margin-top: 3px; }
@@ -1137,7 +1138,7 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
 .history-tabs { margin-bottom: 14px; }
 .ranking-flavor { display: block; font-size: .86em; font-weight: 500; }
 @media (max-width: 660px) {
-  .popularity-cards[data-pantry-page-track] { grid-auto-columns: minmax(125px, 73%); }
+  .popularity-cards[data-pantry-page-track] { grid-auto-columns: 100%; }
 }
 
 </style>
@@ -7045,24 +7046,30 @@ function mountSnackDrawer(root, showDetails, readWarehouse, historyActions, { pr
   let lastReadAt = -Infinity;
   let warehouseRequest;
   let products = new Map();
+  let indexedWarehouse;
 
   function renderRankings() {
     if (!warehouse || warehouseIsPreview) {
       rankingContent.innerHTML = `<p class="popularity-status" role="status">${warehouseRequest ? '正在讀取零食盤點紀錄…' : '排行榜暫時無法讀取。'}</p>`;
       return;
     }
+    const position = rankingContent.querySelector('[data-pantry-page-track]')?.scrollLeft;
     rankingContent.innerHTML = renderFridgePopularity(snackDrawerRankings(warehouse), { snack: true });
+    const track = rankingContent.querySelector('[data-pantry-page-track]');
+    if (track && position) track.scrollLeft = position;
   }
 
   function renderTray() {
     if (!warehouse || cabinet.hidden) return;
-    const active = stockDrawerProducts(warehouse.supplies, false).map(product => ({ ...product, lookupKey: product.key }));
-    const history = stockDrawerProducts(warehouse.supplies, true).map(product => ({
-      ...product, lookupKey: `archive-${product.key}`, archived: true,
-    }));
-    const items = [...active, ...history];
-    products = new Map(items.map(product => [product.lookupKey, product]));
-    shelves.innerHTML = snackShelves(items, search.value, selectedCategory);
+    if (indexedWarehouse !== warehouse) {
+      const active = stockDrawerProducts(warehouse.supplies, false).map(product => ({ ...product, lookupKey: product.key }));
+      const history = stockDrawerProducts(warehouse.supplies, true).map(product => ({
+        ...product, lookupKey: `archive-${product.key}`, archived: true,
+      }));
+      products = new Map([...active, ...history].map(product => [product.lookupKey, product]));
+      indexedWarehouse = warehouse;
+    }
+    shelves.innerHTML = snackShelves([...products.values()], search.value, selectedCategory);
     tray.scrollTop = 0;
   }
 
@@ -7380,10 +7387,13 @@ function inventoryToolbar(warehouse = false) {
 }
 
 function renderOverview() {
+  const rankPosition = main.querySelector('.fridge-popularity [data-pantry-page-track]')?.scrollLeft;
   main.innerHTML = `<div class="pantry-heading">${heading('OPEN A LITTLE HAPPINESS', '今天，喝點什麼？', '果汁、茶飲，還有冰品，隨時來冰箱補給。')}</div>` +
     `<section class="pantry-overview" aria-label="飲料冰箱"><div class="inventory-panel fridge-panel${fridgeOpen ? ' is-browsing' : ''}">${inventoryToolbar()}<div id="inventory-table"></div></div></section>`;
   $('.fridge-panel > .toolbar').hidden = !fridgeOpen;
   renderInventoryTable();
+  const ranking = main.querySelector('.fridge-popularity [data-pantry-page-track]');
+  if (ranking && rankPosition) ranking.scrollLeft = rankPosition;
 }
 
 const loadSnackDrawerModule = () => Promise.resolve(previewSnackDrawer);
@@ -7766,7 +7776,13 @@ async function loadFridgePopularity(force = false) {
   popularityLoading = true; popularityError = false;
   const update = () => {
     const target = document.querySelector('.fridge-popularity [data-popularity-content]');
-    if (view === 'overview' && target) target.innerHTML = renderFridgePopularity(fridgePopularity, { loading: popularityLoading, error: popularityError });
+    if (view !== 'overview' || !target) return;
+    const position = target.querySelector('[data-pantry-page-track]')?.scrollLeft;
+    const focusedPage = target.contains(document.activeElement) && document.activeElement.dataset.pantryPage;
+    target.innerHTML = renderFridgePopularity(fridgePopularity, { loading: popularityLoading, error: popularityError });
+    const track = target.querySelector('[data-pantry-page-track]');
+    if (track && position) track.scrollLeft = position;
+    if (focusedPage) target.querySelector(`[data-pantry-page="${focusedPage}"]`)?.focus({ preventScroll: true });
   };
   update();
   try {
@@ -9281,7 +9297,7 @@ async function refreshCurrentView(manual = false) {
     await store.read();
     // A read must never replace a newer page, an open dialog, or fresh input.
     if (sequence !== routeSequence || inputs !== inputSequence || currentView !== view || busy || modal.open || (!manual && dirty)) return;
-    if(manual&&view==='overview'&&fridgeOpen&&popularityExpanded)fridgePopularityReadAt=-Infinity;
+    if(manual&&view==='overview'&&fridgeOpen&&popularityExpanded)loadFridgePopularity(true);
     if(view==='consumption'&&!manual){updateRankingResults();updateChrome();}
     else if (manual || revision !== store.revision) render();
     else updateChrome();

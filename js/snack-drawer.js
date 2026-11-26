@@ -278,24 +278,30 @@ export function mountSnackDrawer(root, showDetails, readWarehouse, historyAction
   let lastReadAt = -Infinity;
   let warehouseRequest;
   let products = new Map();
+  let indexedWarehouse;
 
   function renderRankings() {
     if (!warehouse || warehouseIsPreview) {
       rankingContent.innerHTML = `<p class="popularity-status" role="status">${warehouseRequest ? '正在讀取零食盤點紀錄…' : '排行榜暫時無法讀取。'}</p>`;
       return;
     }
+    const position = rankingContent.querySelector('[data-pantry-page-track]')?.scrollLeft;
     rankingContent.innerHTML = renderFridgePopularity(snackDrawerRankings(warehouse), { snack: true });
+    const track = rankingContent.querySelector('[data-pantry-page-track]');
+    if (track && position) track.scrollLeft = position;
   }
 
   function renderTray() {
     if (!warehouse || cabinet.hidden) return;
-    const active = stockDrawerProducts(warehouse.supplies, false).map(product => ({ ...product, lookupKey: product.key }));
-    const history = stockDrawerProducts(warehouse.supplies, true).map(product => ({
-      ...product, lookupKey: `archive-${product.key}`, archived: true,
-    }));
-    const items = [...active, ...history];
-    products = new Map(items.map(product => [product.lookupKey, product]));
-    shelves.innerHTML = snackShelves(items, search.value, selectedCategory);
+    if (indexedWarehouse !== warehouse) {
+      const active = stockDrawerProducts(warehouse.supplies, false).map(product => ({ ...product, lookupKey: product.key }));
+      const history = stockDrawerProducts(warehouse.supplies, true).map(product => ({
+        ...product, lookupKey: `archive-${product.key}`, archived: true,
+      }));
+      products = new Map([...active, ...history].map(product => [product.lookupKey, product]));
+      indexedWarehouse = warehouse;
+    }
+    shelves.innerHTML = snackShelves([...products.values()], search.value, selectedCategory);
     tray.scrollTop = 0;
   }
 

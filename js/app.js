@@ -236,10 +236,13 @@ function inventoryToolbar(warehouse = false) {
 }
 
 function renderOverview() {
+  const rankPosition = main.querySelector('.fridge-popularity [data-pantry-page-track]')?.scrollLeft;
   main.innerHTML = `<div class="pantry-heading">${heading('OPEN A LITTLE HAPPINESS', '今天，喝點什麼？', '果汁、茶飲，還有冰品，隨時來冰箱補給。')}</div>` +
     `<section class="pantry-overview" aria-label="飲料冰箱"><div class="inventory-panel fridge-panel${fridgeOpen ? ' is-browsing' : ''}">${inventoryToolbar()}<div id="inventory-table"></div></div></section>`;
   $('.fridge-panel > .toolbar').hidden = !fridgeOpen;
   renderInventoryTable();
+  const ranking = main.querySelector('.fridge-popularity [data-pantry-page-track]');
+  if (ranking && rankPosition) ranking.scrollLeft = rankPosition;
 }
 
 const loadSnackDrawerModule = () => import('./snack-drawer.js');
@@ -622,7 +625,13 @@ async function loadFridgePopularity(force = false) {
   popularityLoading = true; popularityError = false;
   const update = () => {
     const target = document.querySelector('.fridge-popularity [data-popularity-content]');
-    if (view === 'overview' && target) target.innerHTML = renderFridgePopularity(fridgePopularity, { loading: popularityLoading, error: popularityError });
+    if (view !== 'overview' || !target) return;
+    const position = target.querySelector('[data-pantry-page-track]')?.scrollLeft;
+    const focusedPage = target.contains(document.activeElement) && document.activeElement.dataset.pantryPage;
+    target.innerHTML = renderFridgePopularity(fridgePopularity, { loading: popularityLoading, error: popularityError });
+    const track = target.querySelector('[data-pantry-page-track]');
+    if (track && position) track.scrollLeft = position;
+    if (focusedPage) target.querySelector(`[data-pantry-page="${focusedPage}"]`)?.focus({ preventScroll: true });
   };
   update();
   try {
@@ -2137,7 +2146,7 @@ async function refreshCurrentView(manual = false) {
     await store.read();
     // A read must never replace a newer page, an open dialog, or fresh input.
     if (sequence !== routeSequence || inputs !== inputSequence || currentView !== view || busy || modal.open || (!manual && dirty)) return;
-    if(manual&&view==='overview'&&fridgeOpen&&popularityExpanded)fridgePopularityReadAt=-Infinity;
+    if(manual&&view==='overview'&&fridgeOpen&&popularityExpanded)loadFridgePopularity(true);
     if(view==='consumption'&&!manual){updateRankingResults();updateChrome();}
     else if (manual || revision !== store.revision) render();
     else updateChrome();
