@@ -14,3 +14,16 @@ export function wishSupportPreview(wish) {
   const listed = names.slice(0, 8).join('、');
   return [listed + (names.length > 8 ? `等 ${names.length} 位` : ''), unnamed ? `${unnamed} 位未留姓名` : ''].filter(Boolean).join('；');
 }
+
+export function archivedFoodWishId(key) {
+  const inventory = key.startsWith('inventory-');
+  const id = inventory ? key.slice('inventory-'.length) : key;
+  if (!/^[A-Za-z0-9_-]{1,80}$/.test(id)) throw new Error('找不到這個歷史品項。');
+  return `wish-web-pf-${inventory ? 'i' : 'c'}-${id}-v1-pantry-wish`;
+}
+
+export function wishVoterName(value) {
+  const name = typeof value === 'string' ? value.trim() : '';
+  if (!name || name.length > 80) throw new Error('請填寫姓名，最多 80 字。');
+  return name;
+}

@@ -6,6 +6,7 @@ import { submitGoogleWebsiteCommand } from './google-write.js';
 import { normalizeSupplyWarehouse, canonicalSupplyUnit, canonicalSnackCategory, isCornStick, CORN_STICK_REQUEST_PREFIX, SNACK_CATEGORIES, SNACK_UNITS, supplyUnits, supplyNeedsExpiry, validSupplyExpiry } from './supplies.js';
 import { isLowStockItem, isOutOfStockItem, inventoryLowThreshold, matchesInventoryStockFilter, normalizeRestockPreferences, restockThreshold } from './restock-preferences.js';
 import { inventoryActivity, inventoryTotals, normalizeInventoryTotals } from './inventory-activity.js';
+import { archivedFoodWishId, wishVoterName } from './wish-support.js';
 
 let googleCallbackSequence = 0;
 
@@ -800,7 +801,7 @@ export class GoogleInventoryStore {
     catch { return false; }
   }
 
-  async sendWebsiteCommand(operation, data) {
+  async sendWebsiteCommand(operation, data, { requestId } = {}) {
     if (!this.supportsWebsiteEntry) throw new Error('請先更新 Google Apps Script 的 Code.gs，並部署新版本，才能直接在網站送出。');
     const endpoint = validateGoogleScriptUrl(this.url),fastRestock=this.fastRestockVersion===1;
     const protectedWrite=['restock-preference','zero-stock-decision'].includes(operation);
@@ -821,7 +822,7 @@ export class GoogleInventoryStore {
     // The currently deployed script preserves the request ID in the history
     // row. Keep new stick counts distinguishable from old whole-bag counts.
     if (cornStickWrite) data = { ...data, cornStickUnit: '條' };
-    const key = `holdwin-google-pending-v1:${endpoint}:${operation}`;
+    const key = `holdwin-google-pending-v1:${endpoint}:${operation}${requestId ? `:${requestId}` : ''}`;
     let signature = JSON.stringify(data);
     let storage, pending;
     try {
@@ -860,7 +861,7 @@ export class GoogleInventoryStore {
       else throw new Error('上一筆送出仍待確認。請先保留原內容重試，避免重複入庫。');
     }
     const newRequest=!pending;
-    if (!pending) pending = { requestId: (cornStickWrite ? CORN_STICK_REQUEST_PREFIX : '') + this.createRequestId(), signature };
+    if (!pending) pending = { requestId: requestId || (cornStickWrite ? CORN_STICK_REQUEST_PREFIX : '') + this.createRequestId(), signature };
     if (!/^[A-Za-z0-9_-]{20,100}$/.test(pending.requestId)) throw new Error('無法建立這次送出紀錄，請重新開啟網站。');
     try { storage.setItem(key, JSON.stringify(pending)); }
     catch { throw new Error('目前無法保留送出紀錄，資料尚未送出。'); }
@@ -928,12 +929,47 @@ export class GoogleInventoryStore {
     return true;
   }
 
-  async submitWish({ kind, name, url = '', note = '' }) {
+  async submitWish({ kind, name, url = '', note = '' }, options) {
     if (!this.supportsWebsiteEntry) throw new Error('請先更新 Google Apps Script 的 Code.gs，並部署新版本，才能直接在網站送出。');
     if (!['drink', 'snack'].includes(kind) || typeof name !== 'string' || !name.trim() || name.trim().length > 80 || typeof note !== 'string' || note.length > 500) throw new Error('請選擇類型並填寫有效的品項名稱與備註。');
     const link = url ? safeUrl(url) : '';
     if (url && !link) throw new Error('請填寫有效的 http 或 https 連結。');
-    return this.sendWebsiteCommand('wish', { kind, name: name.trim(), url: link, note: note.trim() });
+    return this.sendWebsiteCommand('wish', { kind, name: name.trim(), url: link, note: note.trim() }, options);
+  }
+
+  async ensureWish(id, data) {
+    if (this.data.wishes.some(wish => wish.id === id)) return;
+    await this.submitWish(data, { requestId: id.slice('wish-web-'.length) });
+    // A replay can acknowledge an older receipt without replacing the current snapshot.
+    if (!this.data.wishes.some(wish => wish.id === id)) await this.readPublic();
+  }
+
+  async submitNamedWish(data, voterName) {
+    const name = wishVoterName(voterName);
+    this.getVoterId();
+    const storage = this.pendingStorage || globalThis.sessionStorage;
+    const key = `holdwin-named-wish-v1:${this.url}:${JSON.stringify({ data, name })}`;
+    let requestId;
+    try {
+      requestId = storage.getItem(key) || this.createRequestId();
+      if (!/^[A-Za-z0-9_-]{20,100}$/.test(requestId)) throw new Error('Invalid request ID');
+      storage.setItem(key, requestId);
+    } catch { throw new Error('請允許此網站儲存送出進度，才能安全重試許願。'); }
+    const id = `wish-web-${requestId}`;
+    await this.ensureWish(id, data);
+    const result = await this.voteWish(id, name);
+    try { storage.removeItem(key); } catch { /* A confirmed vote is kept by Google. */ }
+    return result;
+  }
+
+  async supportArchivedFood({ key, name }, voterName) {
+    const voter = wishVoterName(voterName);
+    this.getVoterId();
+    const id = archivedFoodWishId(key);
+    // Every browser creates the shared proposal with the same request ID.
+    // The existing Google vote receipt then records each name independently.
+    await this.ensureWish(id, { kind: 'snack', name, note: '我還想要吃這個！' });
+    return this.voteWish(id, voter);
   }
 
   async supportArchivedDrink(drinkId, voterName) {

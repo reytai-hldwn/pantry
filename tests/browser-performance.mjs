@@ -50,14 +50,19 @@ try{
     await page.locator('#navigation [data-view=wishes]').click();await page.locator('[data-action=new-wish]').first().click();
     await page.locator('#wish-form [name=kind]').selectOption('drink');
     await page.locator('#wish-form [name=name]').fill('虛構效能測試飲料');
+    const wishNameField=page.locator('#wish-form [name=voterName]'),namedWish=await wishNameField.count();
+    if(namedWish)await wishNameField.fill('虛構測試者');
     const beforeWish=reads.filter(a=>a==='public').length,wishStart=Date.now();
     await page.locator('#wish-form [type=submit]').click();await page.waitForSelector('.wish-card');await page.waitForSelector('#modal:not([open])',{state:'attached'});
     const wishMs=Date.now()-wishStart;
     if(version==='current')assert.equal(reads.filter(a=>a==='public').length,beforeWish,'wish receipt avoids another full read');
-    await page.locator('[data-action=vote-wish]').click();await page.locator('#vote-form [name=voterName]').fill('虛構測試者');
-    const beforeVote=reads.filter(a=>a==='public').length,voteStart=Date.now();await page.locator('#vote-form [type=submit]').click();await page.waitForSelector('.wish-vote-button.is-voted');
-    const voteMs=Date.now()-voteStart;
-    if(version==='current')assert.equal(reads.filter(a=>a==='public').length,beforeVote,'vote receipt avoids another full read');
+    let voteMs=null;
+    if(!namedWish){
+      await page.locator('[data-action=vote-wish]').click();await page.locator('#vote-form [name=voterName]').fill('虛構測試者');
+      const beforeVote=reads.filter(a=>a==='public').length,voteStart=Date.now();await page.locator('#vote-form [type=submit]').click();await page.waitForSelector('.wish-vote-button.is-voted');
+      voteMs=Date.now()-voteStart;
+      if(version==='current')assert.equal(reads.filter(a=>a==='public').length,beforeVote,'vote receipt avoids another full read');
+    }
     await page.evaluate(()=>{location.hash='products';});await page.waitForSelector('[data-stock-drink-id]');
     const returnStart=Date.now();await page.evaluate(()=>{location.hash='overview';});await page.waitForSelector('.pantry-stage');const returnMs=Date.now()-returnStart;
     if(version==='current')assert.ok(returnMs<600,'return to the fridge does not wait for Google');

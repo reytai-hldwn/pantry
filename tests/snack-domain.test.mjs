@@ -18,11 +18,14 @@ test('the drawer separates current and historical flavors, retains exact nutriti
   {id:'milk',kind:'snack',name:'Bisco乳酸菌餅乾',category:'甜/鹹餅乾',flavor:'牛奶',active:false},
   {id:'new',kind:'snack',name:'新入庫零食',category:'健康零食',active:true},
   {id:'noodle-02',kind:'noodle',name:'滿漢大餐牛肉麵',active:false},
+  {id:'noodle-custom',kind:'noodle',name:'來一客韓式泡菜',active:true},
+  {id:'retired',kind:'snack',name:'卡迪那95℃薯條',category:'太空包',flavor:'烤馬鈴薯風味',active:false},
+  {id:'retired2',kind:'snack',name:'卡迪那95℃薯條',category:'太空包',flavor:'柚子胡椒風味',active:false},
   {id:'toner',kind:'toner',name:'碳粉',active:false},
  ];
  const current=stockDrawerProducts(supplies,false), history=stockDrawerProducts(supplies,true);
- assert.deepEqual(current.map(item=>item.name),['Bisco乳酸菌餅乾','新入庫零食']);
- assert.deepEqual(history.map(item=>item.name),['Bisco乳酸菌餅乾','滿漢大餐牛肉麵']);
+ assert.deepEqual(current.map(item=>item.name),['Bisco乳酸菌餅乾','新入庫零食','來一客韓式泡菜']);
+ assert.deepEqual(history.map(item=>item.name),['Bisco乳酸菌餅乾','滿漢大餐牛肉麵','來一客牛肉蔬菜','來一客京燉肉骨','來一客川辣牛肉','來一客肉燥菠菜','來一客辛辣香菇','一蘭拉麵']);
  assert.deepEqual(current[0].details.map(item=>item.flavor),['草莓']);
  assert.deepEqual(history[0].details.map(item=>item.flavor),['牛奶']);
  assert.equal(history[1].details[0].flavor,'珍味牛肉');

@@ -57,14 +57,15 @@ try{
       await page.locator('#restock-submit').click();await done();assert.equal(backend.inventory()[0].stock,total);
     }
     await go('wishes');await page.waitForSelector('[data-action="new-wish"]');await page.locator('[data-action="new-wish"]').first().click();
-    assert.equal(await page.locator('#wish-form [name="recorder"], #wish-form [name="voterName"]').count(),0);
     await page.locator('#wish-form [name="kind"]').selectOption('snack');await page.locator('#wish-form [name="name"]').fill('網站原生測試餅乾');
+    const before=posts.length;
+    await page.locator('#wish-form [type="submit"]').click();assert.equal(posts.length,before);
+    await page.locator('#wish-form [name="voterName"]').fill('網站測試者');
     await page.locator('#wish-form [type="submit"]').click();await done();await page.waitForSelector('.wish-card');
     assert.equal(backend.sheets.WishReview.rows[1][6],'snack');
-    await page.locator('[data-action="vote-wish"]').click();const before=posts.length;
-    await page.locator('#vote-form [type="submit"]').click();assert.equal(posts.length,before);
-    await page.locator('#vote-form [name="voterName"]').fill('網站測試者');await page.locator('#vote-form [type="submit"]').click();await done();
     await page.waitForSelector('.wish-vote-button.is-voted');assert.equal(backend.sheets.WishVotes.rows.length,2);
+    await page.locator('[data-action="view-wish-supporters"]').hover();
+    assert.match(await page.locator('.wish-support-tooltip:visible').innerText(),/網站測試者/);
     await page.locator('[data-action="view-wish-supporters"]').click();await page.waitForSelector('.wish-supporter-list');
     assert.match(await page.locator('.wish-supporter-list').innerText(),/網站測試者/);await page.locator('#modal [data-action="close-modal"]').first().click();
     await go('products');await page.waitForSelector('[data-action="quick-add-drink"]');await page.locator('[data-action="quick-add-drink"]').click();
@@ -78,7 +79,7 @@ try{
     assert.equal(backend.inventory().find(row=>row.drink.id===created[0]).stock,null);
     assert.equal(googleForms,0);assert.equal(popups,0);assert.ok(page.url().startsWith(base));assert.deepEqual(errors,[]);
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
-    console.log(`PASS ${width}: five native forms, one request on double submit, partial zero count, case/loose arrivals, anonymous wishes, named votes, supporters, preserved error input, quick product, no Google Forms or navigation`);
+    console.log(`PASS ${width}: native forms, one request on double submit, partial zero count, case/loose arrivals, named wishes, supporters, preserved error input, quick product, no Google Forms or navigation`);
     await context.close();
   }
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}

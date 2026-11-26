@@ -13,6 +13,7 @@ const snackDrawerCrop = { x: 432, y: 749, width: 425, height: 59 };
 
 const drawerCategories = [...SNACK_CATEGORIES, '泡麵'];
 const normalizeSnackSearch = text => text.normalize('NFKC').toLocaleLowerCase('zh-TW');
+const excludedSnackHistory = new Set(['烤馬鈴薯風味', '柚子胡椒風味'].map(flavor => supplyNameKey({ name: '卡迪那95℃薯條', flavor })));
 
 function snackProductPhoto(photo, id) {
   const clip = photo.silhouette ? `<svg class="snack-photo-clip" width="0" height="0" aria-hidden="true"><defs>
@@ -55,24 +56,34 @@ function snackProductCard(product) {
 
 export function stockDrawerProducts(supplies, archived) {
   const products = new Map();
+  const recordedProducts = new Set();
   for (const item of supplies) {
-    if ((item.kind !== 'snack' && item.kind !== 'noodle') || (item.active === false) !== archived) continue;
-    const product = findDrawerProduct(item) || {
+    if (item.kind !== 'snack' && item.kind !== 'noodle') continue;
+    if (archived && item.kind === 'snack' && excludedSnackHistory.has(supplyNameKey(item))) continue;
+    const catalogProduct = findDrawerProduct(item);
+    if (catalogProduct?.historical) recordedProducts.add(catalogProduct.key);
+    if ((item.active === false) !== archived) continue;
+    const product = catalogProduct || {
       key: `inventory-${item.id}`, name: item.name, category: item.kind === 'noodle' ? '泡麵' : item.category,
       flavors: item.flavor || '', photos: [], details: [{ flavor: item.flavor || '', nutrition: null }],
     };
     if (!products.has(product.key)) products.set(product.key, { product, flavors: new Set() });
     products.get(product.key).flavors.add(supplyNameKey(item).split('\u0000')[1]);
   }
+  if (archived) {
+    for (const product of SNACK_DRAWER_PRODUCTS) {
+      if (product.historical && !recordedProducts.has(product.key)) products.set(product.key, { product, flavors: new Set() });
+    }
+  }
   return [...products.values()].map(({ product, flavors }) => {
     if (product.details.length < 2 || flavors.has('')) return product;
     const details = product.details.filter(detail => flavors.has(normalizeSnackSearch(detail.flavor).trim()));
     if (!details.length || details.length === product.details.length) return product;
-    return { ...product, details, flavors: details.map(detail => detail.flavor).join('、') };
+    return { ...product, details, flavors: details.map(detail => detail.flavor).join('、'), wishName: product.name };
   });
 }
 
-function snackShelves(products, search, selected) {
+function snackShelves(products, search, selected, historyActions) {
   const terms = normalizeSnackSearch(search).trim().split(/\s+/).filter(Boolean);
   const shelves = drawerCategories.map((category, index) => {
     if (selected && selected !== category) return '';
@@ -84,7 +95,9 @@ function snackShelves(products, search, selected) {
     if (!items.length) return '';
     return `<section class="snack-shelf" aria-labelledby="snack-shelf-${index}">
       <h2 id="snack-shelf-${index}">${h(category)}</h2>
-      <div class="snack-products">${items.map(snackProductCard).join('')}</div>
+      <div class="snack-products">${items.map(product => historyActions
+        ? `<article class="snack-history-card">${snackProductCard(product)}${historyActions(product)}</article>`
+        : snackProductCard(product)).join('')}</div>
       <div class="snack-shelf-rail" aria-hidden="true"></div>
     </section>`;
   }).join('');
@@ -113,7 +126,9 @@ function openDrawerProduct(product, showDetails) {
     return `<section>${flavor ? `<h3>${h(flavor)}</h3>` : ''}${snackNutrition(nutrition)}${ingredientList}</section>`;
   }).join('');
   const photoNote = product.photoNote ? `<p class="subtle">${h(product.photoNote)}</p>` : '';
-  showDetails(h(product.name), h(product.category), `<div class="snack-nutrition">${details}${photoNote}</div>`);
+  const referenceUrl = safeUrl(product.referenceUrl);
+  const reference = referenceUrl ? `<p><a href="${h(referenceUrl)}" target="_blank" rel="noopener noreferrer">商品官網 ↗</a></p>` : '';
+  showDetails(h(product.name), h(product.category), `<div class="snack-nutrition">${details}${photoNote}${reference}</div>`);
 }
 
 function snackDrawerPath(context, points) {
@@ -233,7 +248,7 @@ function renderSnackRanking({ unit, observed, rows } = {}) {
   return `<ol class="snack-ranking-list">${rows.map((row, index) => `<li><span class="popularity-rank" aria-hidden="true">${index + 1}</span><span class="snack-rank-name">${h(row.label)}</span><span>約 <strong>${row.weekly < .1 ? '少於 0.1' : snackRateFormatter.format(row.weekly)}</strong> ${h(unit)}／週</span></li>`).join('')}</ol><p class="popularity-note">最近 30 天 · 依實際盤點和入庫紀錄估算，每週以 5 個工作日計。</p>`;
 }
 
-export function mountSnackDrawer(root, showDetails, readWarehouse) {
+export function mountSnackDrawer(root, showDetails, readWarehouse, historyActions) {
   const { width, height } = snackSceneSize;
   const crop = snackDrawerCrop;
   const hitPoints = snackDrawerCorners.map(([x, y]) => [x - crop.x, y - crop.y]);
@@ -316,7 +331,7 @@ export function mountSnackDrawer(root, showDetails, readWarehouse) {
     if (!warehouse) return;
     const items = stockDrawerProducts(warehouse.supplies, archived);
     products = new Map(items.map(product => [product.key, product]));
-    shelves.innerHTML = snackShelves(items, search.value, filter.value);
+    shelves.innerHTML = snackShelves(items, search.value, filter.value, archived && (product => historyActions(product, warehouse.data?.wishes || [])));
     tray.scrollTop = 0;
   }
 
@@ -392,5 +407,15 @@ export function mountSnackDrawer(root, showDetails, readWarehouse) {
     const product = products.get(event.target.closest('[data-snack-product-key]')?.dataset.snackProductKey);
     if (product) openDrawerProduct(product, showDetails);
   });
-  return refreshInventory;
+  return {
+    refreshInventory,
+    archivedProduct: key => archived ? products.get(key) : null,
+    archiveWish: id => warehouse?.data?.wishes?.find(wish => wish.id === id),
+    updateArchiveWishes() {
+      if (!archived) return;
+      const scroll = tray.scrollTop;
+      renderTray();
+      tray.scrollTop = scroll;
+    },
+  };
 }

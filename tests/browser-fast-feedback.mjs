@@ -21,7 +21,7 @@ try{
    if(r.request().method()==='POST'){
     const parameter=Object.fromEntries(new URLSearchParams(r.request().postData())),command=JSON.parse(parameter.payload);posts.push(command);
     const path='/reply/'+command.requestId,html=b.ctx.doPost({parameter}).body;
-    replies.set(path,mode==='blocked'?html.replace(/<script>[\s\S]*?<\/script>/,''):html);
+    replies.set(path,mode==='blocked'&&command.operation==='wish'?html.replace(/<script>[\s\S]*?<\/script>/,''):html);
     return r.fulfill({contentType:'text/html',body:`<!doctype html><iframe sandbox="allow-scripts allow-same-origin" src="${sandbox+path}"></iframe>`});
    }
    const parameter=Object.fromEntries(new URL(r.request().url()).searchParams);reads.push(parameter.action);
@@ -37,13 +37,13 @@ try{
   await page.locator('#navigation [data-view=wishes]').click();release();await page.waitForSelector('[data-action=new-wish]');
   assert.equal(await page.locator('body').getAttribute('data-view'),'wishes','early navigation is preserved when the initial response arrives');
   assert.deepEqual(reads,['public']);
-  await page.locator('[data-action=new-wish]').first().click();await page.locator('#wish-form [name=kind]').selectOption('drink');await page.locator('#wish-form [name=name]').fill('虛構跨框架測試茶');await page.locator('#wish-form [type=submit]').click();await page.waitForSelector('.wish-card');await page.waitForSelector('#modal:not([open])',{state:'attached'});
+  await page.locator('[data-action=new-wish]').first().click();await page.locator('#wish-form [name=kind]').selectOption('drink');await page.locator('#wish-form [name=name]').fill('虛構跨框架測試茶');await page.locator('#wish-form [name=voterName]').fill('虛構測試者');await page.locator('#wish-form [type=submit]').click();await page.waitForSelector('.wish-card');await page.waitForSelector('#modal:not([open])',{state:'attached'});
   assert.equal(reads.filter(action=>action==='receipt').length,0,'sandbox descendant delivers the committed receipt without a second Google request');
-  await page.locator('[data-action=vote-wish]').click();await page.locator('#vote-form [name=voterName]').fill('虛構測試者');await page.locator('#vote-form [type=submit]').click();await page.waitForSelector('.wish-vote-button.is-voted');
+  await page.waitForSelector('.wish-vote-button.is-voted');
   assert.equal(reads.filter(action=>action==='receipt').length,0);assert.equal(reads.filter(action=>action==='public').length,1);assert.equal(b.sheets.WishVotes.rows.length,2);
-  mode='blocked';await page.locator('[data-action=new-wish]').first().click();await page.locator('#wish-form [name=kind]').selectOption('drink');await page.locator('#wish-form [name=name]').fill('虛構回條備援測試茶');await page.locator('#wish-form [type=submit]').click();await page.waitForSelector('#modal:not([open])',{state:'attached'});
+  mode='blocked';await page.locator('[data-action=new-wish]').first().click();await page.locator('#wish-form [name=kind]').selectOption('drink');await page.locator('#wish-form [name=name]').fill('虛構回條備援測試茶');await page.locator('#wish-form [name=voterName]').fill('虛構測試者');await page.locator('#wish-form [type=submit]').click();await page.waitForSelector('#modal:not([open])',{state:'attached'});
   assert.equal(reads.filter(action=>action==='receipt').length,1,'a blocked sandbox message falls back to a durable receipt read');
-  assert.equal(b.sheets.WishReview.rows.length,3);assert.equal(posts.length,3);assert.equal(await page.locator('iframe[name^=holdwin_write_]').count(),0);assert.deepEqual(errors,[]);
+  assert.equal(b.sheets.WishReview.rows.length,3);assert.equal(posts.length,4);assert.equal(await page.locator('iframe[name^=holdwin_write_]').count(),0);assert.deepEqual(errors,[]);
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
   console.log(`PASS ${width}: cold fridge before held data, open-door loading state, early navigation, nested cross-origin receipts, wish/vote without GET polling, blocked-message fallback, no duplicate writes.`);await context.close();
  }

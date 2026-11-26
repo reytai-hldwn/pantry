@@ -7,6 +7,7 @@ import { recordedBalances } from './inventory-activity.js';
 import { supplyNameKey, supplyLabel } from './supplies.js';
 import { RESTOCK_MODES, hasRecordedStock, isLowStockItem, restockPreferenceMode } from './restock-preferences.js';
 import { fulfilZeroRestocks } from './empty-stock.js';
+import { archivedFoodWishId, wishVoterName } from './wish-support.js';
 
 const DATA_KEY = 'office-pantry-demo-v1';
 const SESSION_KEY = 'office-pantry-session-v1';
@@ -420,7 +421,7 @@ export class InventoryStore {
     return {supported:this.supportsGacha,eligibleIds:this.supportsGacha?this.data.drinks.filter(item=>item.active!==false&&hasRecordedStock(item)&&item.stock>0).map(item=>item.id):[]};
   }
 
-  async submitWish({ name, url = '', note = '', kind = 'drink' } = {}) {
+  async submitWish({ name, url = '', note = '', kind = 'drink' } = {}, { id, voterName } = {}) {
     if (!['drink', 'snack'].includes(kind)) throw new Error('請選擇飲料許願或零食許願。');
     if (this.mode !== 'demo' && kind !== 'drink') throw new Error('此舊版共用介接尚未支援零食許願，請改用 Google 共用模式。');
     if (typeof name !== 'string' || !name.trim()) throw new Error('請填寫品項名稱。');
@@ -437,9 +438,9 @@ export class InventoryStore {
     let saved;
     if (this.mode === 'demo') {
       const next = structuredClone(this.data);
-      // Only these fields are accepted. Public callers cannot choose an ID,
-      // approval status, timestamp, or replace stock through wish submission.
-      next.wishes.push({ id: uid(), kind, name: wishName, url: wishUrl, note: wishNote, status: 'pending', createdAt: new Date().toISOString(), votes: 0, voterIds: [] });
+      const voterId = voterName ? inventoryLocalWishVoterId(true) : null;
+      next.wishes.push({ id: id || uid(), kind, name: wishName, url: wishUrl, note: wishNote, status: 'pending', createdAt: new Date().toISOString(),
+        votes: voterId ? 1 : 0, voterIds: voterId ? [voterId] : [], ...(voterId ? { voterNames: { [voterId]: voterName } } : {}) });
       saved = this.saveLocal(next);
     } else {
       const result = await this.request('/rest/v1/rpc/submit_wish', {
@@ -453,6 +454,23 @@ export class InventoryStore {
     this.revision = saved.revision;
     this.updatedAt = saved.updated_at;
     return this.data;
+  }
+
+  async submitNamedWish(data, voterName) {
+    if (this.mode !== 'demo') throw new Error('目前連線尚未啟用具名許願。');
+    return this.submitWish(data, { voterName: wishVoterName(voterName) });
+  }
+
+  async supportArchivedFood({ key, name }, voterName) {
+    if (this.mode !== 'demo') throw new Error('目前連線尚未啟用回購許願。');
+    const voter = wishVoterName(voterName), id = archivedFoodWishId(key);
+    if (!this.data.wishes.some(wish => wish.id === id)) {
+      await this.submitWish({ kind: 'snack', name, note: '我還想要吃這個！' }, { id, voterName: voter });
+      return { id, alreadyVoted: false };
+    }
+    const alreadyVoted = this.hasVoted(id);
+    await this.voteWish(id, voter);
+    return { id, alreadyVoted };
   }
 
   hasVoted(wishId) {

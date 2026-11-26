@@ -81,6 +81,44 @@ test('confirmed wish/vote snapshots skip the extra full read and update cache wi
   assert.equal(v.reads(),1);assert.equal(v.store.data.wishes[0].votes,1);assert.equal(v.store.hasVoted(c.store.data.wishes[0].id),true);
 });
 
+test('named wishes resume the first vote after interruption without re-creating the proposal', async () => {
+  const b = websiteBackend();
+  let sequence = 0, interrupted = false;
+  const c = client(b, {
+    createRequestId: () => `named-wish-test-request-${++sequence}`,
+    submitWebsiteCommand: async (_url, command) => {
+      if (command.operation === 'vote' && !interrupted) {
+        interrupted = true;
+        throw new Error('connection interrupted');
+      }
+      return b.send(command.operation, command.data, command.requestId).result;
+    },
+  });
+  await c.store.init();
+  await assert.rejects(c.store.submitNamedWish(wishData, ' '), /姓名/);
+  await assert.rejects(c.store.submitNamedWish(wishData, '甲'), /interrupted/);
+  assert.equal(b.sheets.WishReview.rows.length, 2);
+  await c.store.submitNamedWish(wishData, '甲');
+  assert.equal(b.sheets.WishReview.rows.length, 2);
+  assert.deepEqual(c.store.data.wishes[0].supporters, ['甲']);
+});
+
+test('two browsers can register names for the same archived bowl with one shared wish', async () => {
+  const b = websiteBackend();
+  let sequence = 0;
+  const createRequestId = () => `food-archive-test-request-${++sequence}`;
+  const first = client(b, { createRequestId, createVoterId: () => 'archive-test-browser-a' }).store;
+  const second = client(b, { createRequestId, createVoterId: () => 'archive-test-browser-b' }).store;
+  await Promise.all([first.init(), second.init()]);
+  const item = { key: 'noodle-13', name: '一蘭拉麵' };
+  await Promise.all([first.supportArchivedFood(item, '甲'), second.supportArchivedFood(item, '乙')]);
+  await second.supportArchivedFood(item, '乙');
+  const wishes = b.ctx.publicData_().wishes;
+  assert.equal(wishes.length, 1);
+  assert.equal(wishes[0].votes, 2);
+  assert.deepEqual(plain(wishes[0].supporters).sort(), ['乙', '甲']);
+});
+
 test('legacy or mismatched receipts use the confirmed full-read fallback',async()=>{
   for(const patch of [undefined,{operation:'wish',id:'wrong',snapshotAt:stamp,wish:{id:'wrong'}}]){
     const b=websiteBackend(),c=client(b,{submitWebsiteCommand:async(_url,command)=>patch||{operation:'wish',id:'legacy'}});
