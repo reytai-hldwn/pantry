@@ -17,6 +17,7 @@ import { groupEmptyStock } from './empty-stock.js';
 import { CONSUMPTION_KINDS, buildConsumptionRecords, consumptionPeriod, selectConsumption } from './consumption.js';
 import { renderConsumptionControls, renderConsumptionResults } from './consumption-view.js';
 import { gachaDay, gachaResetDelay, drawGacha, readDailyGacha, saveDailyGacha, chooseGachaDrink, chooseGachaSnack, renderGacha, gachaFlightKeyframes, GACHA_ANIMATION_MS, GACHA_OPEN_MS, GACHA_FLIGHT_MS, GACHA_UNFOLD_MS } from './gacha.js';
+import { renderSnackDrawerRoom } from './snack-room.js';
 
 const store = window.DRINKS_CONFIG?.provider === 'google' ? new GoogleInventoryStore(window.DRINKS_CONFIG) : new InventoryStore(window.DRINKS_CONFIG);
 const $ = (selector) => document.querySelector(selector);
@@ -212,13 +213,33 @@ function renderSnackDrawer() {
   if (main.firstElementChild?.classList.contains('snack-drawer')) return;
   const root = document.createElement('div');
   root.className = 'snack-drawer';
+  const preview = store.mode === 'google' ? store.cachedSnackDrawerPreview() : null;
+  const readWarehouse = force => store.mode === 'google' ? store.readSnackDrawer(force) : Promise.resolve(store);
+  const initialRead = readWarehouse(false);
+  initialRead.catch(() => {});
+  root.innerHTML = renderSnackDrawerRoom();
+  const guide = root.querySelector('.snack-guide');
+  let queuedOpen;
+  function queueOpen(event) {
+    const trigger = event.target.closest('.snack-guide, .snack-hit');
+    if (trigger && !queuedOpen) {
+      queuedOpen = trigger;
+      guide.textContent = '正在開啟…';
+      guide.setAttribute('aria-busy', 'true');
+    }
+  }
+  root.addEventListener('click', queueOpen);
   const load = async () => {
-    root.innerHTML = '<div class="loading-state" role="status"><span class="loader"></span><p>正在開啟零食抽屜…</p></div>';
     try {
       const { mountSnackDrawer } = await loadSnackDrawerModule();
       if (root.isConnected) {
-        const readWarehouse = async force => store.mode === 'google' ? (await store.fetchWarehouseSnapshot(force)).result : store;
-        Object.assign(root, mountSnackDrawer(root, showModal, readWarehouse, renderArchivedFoodActions));
+        root.removeEventListener('click', queueOpen);
+        Object.assign(root, mountSnackDrawer(root, showModal, readWarehouse, renderArchivedFoodActions, { preview, initialRead }));
+        if (queuedOpen) {
+          guide.textContent = '拉開零食抽屜';
+          guide.removeAttribute('aria-busy');
+          queuedOpen.click();
+        }
       }
     } catch {
       if (!root.isConnected) return;
@@ -348,7 +369,8 @@ function renderSupplyBatches(item){
   const first=batches[0],status=supplyExpiryStatus(first.expiresOn);
   return `<details class="supply-batches"><summary><span class="expiry-badge expiry-${status.kind}">${h(first.expiresOn||'未登記日期')} · ${status.label}</span><small>${batches.length} 個批次</small></summary><ul>${batches.map(batch=>{
     const state=supplyExpiryStatus(batch.expiresOn);
-    return `<li data-batch-id="${h(batch.id)}"><span class="expiry-badge expiry-${state.kind}">${h(batch.expiresOn||'未登記日期')} · ${state.label}</span><span>${batch.type==='expiry-set'?'效期核對':'入庫'} ${batch.quantity} ${h(item.unit)} · ${formatDate(batch.createdAt,true)}</span>${button('此批已用完','supply-expiry-close',`data-id="${h(batch.id)}"${store.supportsSupplyExpiry?'':' disabled'}`,'button-small button-plain')}</li>`;
+    const correct = store.supportsSupplyExpiryCorrection ? button('更正效期', 'supply-expiry-correction', `data-id="${h(batch.id)}"`, 'button-small button-plain') : '';
+    return `<li data-batch-id="${h(batch.id)}"><span class="expiry-badge expiry-${state.kind}">${h(batch.expiresOn||'未登記日期')} · ${state.label}</span><span>${batch.type==='expiry-set'?'效期核對':'入庫'} ${batch.quantity} ${h(item.unit)} · ${formatDate(batch.createdAt,true)}</span>${correct}${button('此批已用完','supply-expiry-close',`data-id="${h(batch.id)}"${store.supportsSupplyExpiry?'':' disabled'}`,'button-small button-plain')}</li>`;
   }).join('')}</ul><p>數量為入庫或效期核對時的記錄，剩餘請實際確認。標記用完可解除提醒；盤點為 0 會結束之前批次。</p></details>${supplyHasUntrackedExpiry(item.id,store.supplyEvents||[])?'<p class="cell-note">既有或調整的庫存尚未附效期，請核對現場。</p>':''}`;
 }
 
@@ -841,8 +863,13 @@ function updateAdminDisclosure(id,count,content) {
   target.querySelector('[data-admin-summary-content]').innerHTML=content;
 }
 
-function adminStockList(items,emptyStock=false) {
-  return `<ul class="admin-low-list">${items.map(item=>`<li class="${item.mode==='consider'?'needs-restock':'is-paused'}"${item.kind==='snack'&&item.mode==='consider'?` data-manual-snack-id="${h(item.id)}"`:''}><span><small>${item.kind==='drink'?'飲料':SUPPLY_KINDS[item.kind]}</small>${emptyStock?`<a class="text-link" href="#products" data-action="open-empty-stock" data-id="${h(item.kind)}"><strong>${h(supplyLabel(item))}</strong></a>`:`<strong>${h(supplyLabel(item))}</strong>`}${item.mode!=='normal'?`<small>${h(RESTOCK_MODES[item.mode])}</small>`:''}</span><b>${item.stock??'尚未確認'}<small>${h(item.unit)}</small></b></li>`).join('')}</ul>`;
+function adminStockList(items, { showArt = false } = {}) {
+  const rows = items.map(item => {
+    const label = `<span><small>${item.kind === 'drink' ? '飲料' : SUPPLY_KINDS[item.kind]}</small><strong>${h(supplyLabel(item))}</strong>${item.mode !== 'normal' ? `<small>${h(RESTOCK_MODES[item.mode])}</small>` : ''}</span>`;
+    const product = showArt ? `<div class="admin-restock-product">${purchasedWishArt({ purchasedProduct: item })}${label}</div>` : label;
+    return `<li class="${item.mode === 'consider' ? 'needs-restock' : 'is-paused'}"${item.kind === 'snack' && item.mode === 'consider' ? ` data-manual-snack-id="${h(item.id)}"` : ''}>${product}<b>${item.stock ?? '尚未確認'}<small>${h(item.unit)}</small></b></li>`;
+  }).join('');
+  return `<ul class="admin-low-list">${rows}</ul>`;
 }
 
 function adminEmptyStockList(items) {
@@ -873,7 +900,10 @@ async function loadAdminSummary({force=false}={}){
     const status=$('#admin-data-status');if(status)status.textContent=(summary.snapshotAt?'資料讀取：'+formatDate(summary.snapshotAt,true):'')+(updating?' · 更新中…':'');
     const restockItems=summary.restockItems||summary.manualSnackItems||[];
     const lowItems=summary.lowItems.filter(item=>!['snack','frozen','noodle'].includes(item.kind)||item.mode==='consider');
-    updateAdminDisclosure('admin-restock',`${restockItems.length} 種`,restockItems.length?adminStockList(restockItems):'<p class="subtle">目前沒有勾選需要補貨的品項。</p>');
+    updateAdminDisclosure('admin-restock',`${restockItems.length} 種`,restockItems.length?adminStockList(restockItems, { showArt: true }):'<p class="subtle">目前沒有勾選需要補貨的品項。</p>');
+    document.querySelectorAll('#admin-restock .admin-low-list li').forEach((row, index) => {
+      hydratePurchasedWishArt(row, { purchasedProduct: restockItems[index] }, `restock-outline-${index}`);
+    });
     updateAdminDisclosure('admin-low-stock',`${lowItems.length} 種`,lowItems.length?adminStockList(lowItems):'<p class="subtle">目前沒有庫存量少的品項。</p>');
     adminZeroItems=[];
     renderAdminActivity(summary);
@@ -1078,8 +1108,10 @@ async function route() {
     syncFridgeScene(null);
     updateChrome();
     main.setAttribute('aria-busy', 'true');
-    main.innerHTML = `<div class="loading-state"><span class="loader"></span><p>正在開啟${viewNames[view]}，讀取共用資料…</p></div>`;
-    try { await (adminViews.has(view) ? store.openWarehouse() : store.openPublic()); }
+    const reading = adminViews.has(view) ? store.openWarehouse() : store.openPublic();
+    if (view === 'overview') { if (!store.googleViewLoaded) renderOverview(); }
+    else main.innerHTML = `<div class="loading-state"><span class="loader"></span><p>正在開啟${viewNames[view]}，讀取共用資料…</p></div>`;
+    try { await reading; }
     catch (error) {
       if (sequence !== routeSequence) return;
       routeLoading = false;
@@ -1238,6 +1270,14 @@ function confirmDrinkArrivals(entries, detail = '') {
 
 async function submitForm(form) {
   const values = new FormData(form);
+  if (form.id === 'supply-expiry-correction-form') {
+    await store.correctSupplyExpiry({ batchId: form.dataset.id, expectedExpiresOn: form.dataset.previous || null, expiresOn: values.get('expiresOn'), recorder: values.get('recorder') });
+    modalDirty = false;
+    modal.close();
+    render();
+    googleWriteToast('已儲存這批的保存期限。');
+    return;
+  }
   if (form.id === 'wish-purchase-form') {
     const intent = form.wishPurchase;
     const product = intent.purchased ? selectedWishProduct(form) : null;
@@ -1500,6 +1540,14 @@ async function runAction(action, id) {
   if(action==='snack-details'){openSnackDetails(id);return;}
   if(action==='supply-stock-filter'){if(view==='products'&&['all','low','archived'].includes(id)){supplyFilter=id;if(supplyProduct&&!snackProductNames().includes(supplyProduct))supplyProduct='';renderWarehouse();}return;}
   if(action==='supply-expiry-set'){if(view==='products'&&store.canManage)openSupplyExpiryEditor(id);return;}
+  if (action === 'supply-expiry-correction') {
+    if (view !== 'products' || !store.supportsSupplyExpiryCorrection) return;
+    const batch = store.supplyEvents.find(event => event.id === id);
+    const item = batch && supplyById(batch.supplyId);
+    if (!item || !supplyBatches(item.id, store.supplyEvents).some(event => event.id === id)) throw new Error('找不到可更正的入庫批次。');
+    showModal('更正這批保存期限', `${h(supplyLabel(item))} · ${batch.quantity} ${h(item.unit)} · ${formatDate(batch.createdAt, true)}`, `<form id="supply-expiry-correction-form" data-id="${h(id)}" data-previous="${h(batch.expiresOn)}">${recorderField()}<label class="field">保存期限<input name="expiresOn" type="date" required value="${h(batch.expiresOn)}"></label><div class="form-actions">${button('取消', 'close-modal', 'type="button"', 'button-outline')}<button type="submit" class="button">儲存保存期限</button></div></form>`);
+    return;
+  }
   if(['supply-expiry-add','supply-expiry-remove'].includes(action)){
     const form=$('#supply-expiry-set-form');if(!modal.open||!form)return;
     const rows=form.querySelectorAll('[data-expiry-row]');
@@ -1866,14 +1914,8 @@ document.addEventListener('visibilitychange',()=>{
   if(!document.hidden&&view==='consumption'&&store.mode==='google'&&!store.freshWarehouseSnapshot())refreshCurrentView();
 });
 
-// The closed fridge does not depend on remote inventory; paint it while Google loads.
-if(store.mode==='google'&&(!location.hash||location.hash==='#overview')){
-  renderOverview();updateChrome();main.setAttribute('aria-busy','true');
-}
 try {
-  if (store.mode === 'google' && ['#admin', '#snack-drawer'].includes(location.hash)) { /* These views can open without loading inventory histories. */ }
-  else if (store.mode === 'google' && adminViews.has(location.hash.slice(1))) await store.openWarehouse();
-  else await store.init();
+  if (store.mode !== 'google') await store.init();
   ready = true;
   await route();
   if (store.revalidateOnStart && !store.inWarehouse) refreshCurrentView();

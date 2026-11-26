@@ -7,74 +7,13 @@ import { normalizeSupplyWarehouse, canonicalSupplyUnit, canonicalSnackCategory, 
 import { isLowStockItem, isOutOfStockItem, inventoryLowThreshold, matchesInventoryStockFilter, normalizeRestockPreferences, restockThreshold } from './restock-preferences.js';
 import { inventoryActivity, inventoryTotals, normalizeInventoryTotals } from './inventory-activity.js';
 import { archivedFoodWishId, wishVoterName, WISH_PRODUCT_KINDS } from './wish-support.js';
+import { fetchGooglePublicData, validateGoogleScriptUrl, takeEarlyInventoryRead } from './google-read.js';
+export { fetchGooglePublicData, validateGoogleScriptUrl } from './google-read.js';
 
-let googleCallbackSequence = 0;
 
 function legacySnackCategory(entry) {
   return entry.kind==='snack'&&canonicalSnackCategory(entry.category)==='健康零食'
     ? {...entry,category:'燕麥棒/餅'} : entry;
-}
-
-export function validateGoogleScriptUrl(value) {
-  let url;
-  try { url = new URL(typeof value === 'string' ? value.trim() : ''); } catch { /* handled below */ }
-  if (!url || url.protocol !== 'https:' || url.hostname !== 'script.google.com' ||
-      url.username || url.password || url.port || url.search || url.hash ||
-      !/^\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(url.pathname)) {
-    throw new Error('請在 config.js 設定已發布的 Google Apps Script HTTPS 網址（結尾為 /exec）。');
-  }
-  return url.href;
-}
-
-/** Read-only JSONP: catalogs, warehouse observations and write receipts. */
-export function fetchGooglePublicData(endpoint, options = {}) {
-  const url = new URL(validateGoogleScriptUrl(endpoint));
-  const action = options.action ?? 'public';
-  if (!['public', 'warehouse', 'receipt', 'popularity', 'admin', 'gacha'].includes(action)) throw new Error('不支援的 Google 資料讀取方式。');
-  if (action === 'receipt' && !/^[A-Za-z0-9_-]{20,100}$/.test(options.requestId || '')) throw new Error('儲存回條代號不正確。');
-  const pageWindow = options.window || globalThis.window;
-  const pageDocument = options.document || globalThis.document;
-  const schedule = options.setTimeout || globalThis.setTimeout;
-  const cancel = options.clearTimeout || globalThis.clearTimeout;
-  const timeout = options.timeout ?? 15000;
-  if (!pageWindow || !pageDocument?.createElement || !pageDocument.head?.appendChild) {
-    return Promise.reject(new Error('目前的瀏覽器無法載入 Google 共用資料。'));
-  }
-  const callback = `__holdwin_${Date.now().toString(36)}_${(++googleCallbackSequence).toString(36)}_${Math.random().toString(36).slice(2)}`;
-  url.searchParams.set('action', action);
-  url.searchParams.set('callback', callback);
-  if(['admin','warehouse'].includes(action)&&options.force===true)url.searchParams.set('fresh','1');
-  if (action === 'receipt') url.searchParams.set('requestId', options.requestId);
-  return new Promise((resolve, reject) => {
-    const script = pageDocument.createElement('script');
-    let timer;
-    let settled = false;
-    const cleanup = () => {
-      if (timer !== undefined) cancel(timer);
-      script.onerror = null;
-      script.onload = null;
-      script.remove();
-      delete pageWindow[callback];
-    };
-    const finish = (error, result) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      if (error) reject(error);
-      else resolve(result);
-    };
-    pageWindow[callback] = (result) => finish(null, result);
-    script.async = true;
-    script.referrerPolicy = 'no-referrer';
-    script.src = url.href;
-    script.onerror = () => finish(new Error('無法讀取 Google 共用資料。請確認網路，以及 Apps Script 是否已發布為任何人可讀取。'));
-    script.onload = () => {
-      if (!settled) finish(new Error('Google 端點未回傳預期資料。請確認部署的是提供的 Apps Script，並重新發布最新版本。'));
-    };
-    timer = schedule(() => finish(new Error('Google 共用資料讀取逾時，請稍後重新整理。')), timeout);
-    try { pageDocument.head.appendChild(script); }
-    catch { finish(new Error('無法載入 Google 共用資料，請稍後重新整理。')); }
-  });
 }
 
 function textField(value, label, max, required = true) {
@@ -425,6 +364,7 @@ export class GoogleInventoryStore {
   get supportsSnackRestockFlags() { return this.supportsSnacks && this.supportsRestockPreferences && this.snackManualVersion===1; }
   get supportsSupplyExpiry() { return this.supportsSupplies && this.supplyExpiryVersion===1; }
   get supportsSupplyExpirySet() { return this.supportsSupplyExpiry && this.supplyExpirySetVersion===1; }
+  get supportsSupplyExpiryCorrection() { return this.supportsSupplyExpiry && this.supplyExpiryCorrectionVersion === 1; }
   get supportsRestockPreferences() { return this.supportsWebsiteEntry && this.restockPreferenceVersion===1; }
 
   async init() {
@@ -461,7 +401,10 @@ export class GoogleInventoryStore {
     if(!request){
       const writeSequence=this.confirmedWriteSequence;
       request=(async()=>{
-        const payload=await this.readPublicData(validateGoogleScriptUrl(this.url),{action:'warehouse',...(force?{force:true}:{})});
+        const endpoint = validateGoogleScriptUrl(this.url);
+        const early = this.readPublicData === fetchGooglePublicData ? takeEarlyInventoryRead(endpoint, 'warehouse') : null;
+        const payload = await (early && !force && writeSequence === 0 ? early :
+          this.readPublicData(endpoint, { action: 'warehouse', ...(force ? { force: true } : {}) }));
         if(payload?.error==='unsupported_action')throw new Error('目前 Google 程式還不支援免登入倉庫，請更新 Code.gs 並重新部署。');
         const value={result:normalizeGooglePublicData(payload,{warehouse:true}),readAt:this.now(),writeSequence};
         if(writeSequence===this.confirmedWriteSequence)this.warehouseSnapshot=value;
@@ -474,8 +417,36 @@ export class GoogleInventoryStore {
 
   async prefetchWarehouse() { await this.fetchWarehouseSnapshot(); }
 
+  snackDrawerCacheKey() { return `holdwin-snack-display-v1:${validateGoogleScriptUrl(this.url)}`; }
+
+  cachedSnackDrawerPreview() {
+    try {
+      const source = (this.publicStorage || globalThis.localStorage)?.getItem(this.snackDrawerCacheKey());
+      if (!source || source.length > 350000) return null;
+      const stored = JSON.parse(source), age = this.now() - stored.savedAt;
+      if (!Number.isFinite(age) || age < 0 || age > 86400000) return null;
+      const { supplies } = normalizeSupplyWarehouse({ supplyEntry: { version: 1, snackVersion: 1 }, supplies: stored.supplies, supplyEvents: [] });
+      return { supplies, data: { wishes: stored.wishes.map(normalizeGoogleWish) } };
+    } catch { return null; }
+  }
+
+  async readSnackDrawer(force = false) {
+    const snapshot = await this.fetchWarehouseSnapshot(force);
+    // Persist only the public drawer projection, never counts, people who
+    // handled stock, stocktake dates, or underlying event history.
+    if (snapshot.writeSequence === this.confirmedWriteSequence) try {
+      const { supplies, data } = snapshot.result;
+      const preview = { savedAt: snapshot.readAt,
+        supplies: supplies.filter(item => ['snack','noodle'].includes(item.kind)).map(({ id, name, kind, unit, active, flavor, category }) => ({ id, name, kind, unit, active, flavor, category, stock: null, lastCountAt: null })),
+        wishes: data.wishes.filter(wish => wish.id.startsWith('wish-web-pf-')) };
+      const serialized = JSON.stringify(preview);
+      if (serialized.length <= 350000) (this.publicStorage || globalThis.localStorage)?.setItem(this.snackDrawerCacheKey(), serialized);
+    } catch { /* A private-mode storage failure does not prevent browsing. */ }
+    return snapshot.result;
+  }
+
   async openPublic() {
-    if (!this.googleViewLoaded) return this.readPublic();
+    if (!this.googleViewLoaded) return this.init();
     if (!this.inWarehouse) return this.data;
     // Reuse already validated display fields when returning from administration.
     // Quantities and histories stay out of public views and persistent storage.
@@ -507,7 +478,11 @@ export class GoogleInventoryStore {
       else {
         const action='public';
         let request=this.pendingGoogleReads.get(action);
-        if(!request){request=this.readPublicData(endpoint,{action});this.pendingGoogleReads.set(action,request);}
+        if (!request) {
+          const early = this.readPublicData === fetchGooglePublicData ? takeEarlyInventoryRead(endpoint, action) : null;
+          request = early && writeSequence === 0 ? early : this.readPublicData(endpoint, { action });
+          this.pendingGoogleReads.set(action, request);
+        }
         try{payload=await request;}finally{if(this.pendingGoogleReads.get(action)===request)this.pendingGoogleReads.delete(action);}
       }
     } catch (error) {
@@ -576,9 +551,10 @@ export class GoogleInventoryStore {
     this.snackManualVersion = result.snackManualVersion || 0;
     this.supplyExpiryVersion = result.supplyExpiryVersion || 0;
     this.supplyExpirySetVersion = result.supplyExpirySetVersion || 0;
+    this.supplyExpiryCorrectionVersion = result.supplyExpiryCorrectionVersion || 0;
     this.restockPreferences = result.restockPreferences || [];
     this.restockPreferenceVersion = result.restockPreferenceVersion || 0;
-    this.revision = JSON.stringify({ data: result.data, formUrls: result.formUrls, voteForm: result.voteForm, wishForm: result.wishForm, adminUrl: result.adminUrl, websiteEntryVersion: result.websiteEntryVersion, wishPurchaseVersion: result.wishPurchaseVersion, gachaVersion:this.gachaVersion, newArrivalVersion:this.newArrivalVersion,drinkCategoryVersion:this.drinkCategoryVersion,batchArrivalVersion:this.batchArrivalVersion,archivedArrivalVersion:this.archivedArrivalVersion,snackFlavorVersion:this.snackFlavorVersion,manualAllVersion:this.manualAllVersion,archivedRestockVersion:this.archivedRestockVersion, supplies:this.supplies,supplyEvents:this.supplyEvents,supplyEntryVersion:this.supplyEntryVersion,supplySnackVersion:this.supplySnackVersion,supplyFrozenVersion:this.supplyFrozenVersion,supplySnackPolicyVersion:this.supplySnackPolicyVersion,snackManualVersion:this.snackManualVersion,supplyExpiryVersion:this.supplyExpiryVersion,supplyExpirySetVersion:this.supplyExpirySetVersion,restockPreferences:this.restockPreferences,restockPreferenceVersion:this.restockPreferenceVersion, coffeeReceipts:this.coffeeReceipts, coffeeEntryVersion:this.coffeeEntryVersion });
+    this.revision = JSON.stringify({ data: result.data, formUrls: result.formUrls, voteForm: result.voteForm, wishForm: result.wishForm, adminUrl: result.adminUrl, websiteEntryVersion: result.websiteEntryVersion, wishPurchaseVersion: result.wishPurchaseVersion, gachaVersion:this.gachaVersion, newArrivalVersion:this.newArrivalVersion,drinkCategoryVersion:this.drinkCategoryVersion,batchArrivalVersion:this.batchArrivalVersion,archivedArrivalVersion:this.archivedArrivalVersion,snackFlavorVersion:this.snackFlavorVersion,manualAllVersion:this.manualAllVersion,archivedRestockVersion:this.archivedRestockVersion, supplies:this.supplies,supplyEvents:this.supplyEvents,supplyEntryVersion:this.supplyEntryVersion,supplySnackVersion:this.supplySnackVersion,supplyFrozenVersion:this.supplyFrozenVersion,supplySnackPolicyVersion:this.supplySnackPolicyVersion,snackManualVersion:this.snackManualVersion,supplyExpiryVersion:this.supplyExpiryVersion,supplyExpirySetVersion:this.supplyExpirySetVersion,supplyExpiryCorrectionVersion:this.supplyExpiryCorrectionVersion,restockPreferences:this.restockPreferences,restockPreferenceVersion:this.restockPreferenceVersion, coffeeReceipts:this.coffeeReceipts, coffeeEntryVersion:this.coffeeEntryVersion });
   }
 
   get supportsCoffee() { return this.supportsWebsiteEntry && this.coffeeEntryVersion === 2; }
@@ -1082,6 +1058,11 @@ export class GoogleInventoryStore {
     if(this.isSnackSupply(data.supplyId)&&!this.supportsSnacks)throw new Error('請先更新 Apps Script 部署，才能登記零食效期。');
     if(!this.supportsSupplyExpirySet)throw new Error('請先更新 Apps Script 部署，才能補登既有庫存的保存期限。');
     return this.sendWebsiteCommand('supply-expiry-set',data);
+  }
+
+  async correctSupplyExpiry(data) {
+    if (!this.supportsSupplyExpiryCorrection) throw new Error('請先更新原 Google Apps Script 部署，才能更正單批保存期限。');
+    return this.sendWebsiteCommand('supply-expiry-correction', data);
   }
 
   async setRestockPreference(data) {

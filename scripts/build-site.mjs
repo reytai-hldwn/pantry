@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { validateGoogleScriptUrl } from '../js/google-store.js';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { build } from 'esbuild';
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 const pages = ['index.html', 'styles.css', 'themes.css', 'fridge.css', 'pantry.css', 'theme.js'];
@@ -88,6 +89,18 @@ export async function buildSite({ root = projectRoot, env = process.env } = {}) 
     for (const name of pages) await copyStatic(join(root, name), join(staging, name));
     await copyDirectory('js');
     await copyDirectory('assets');
+    const entry = 'js/pantry-app.js';
+    const bundle = await build({ absWorkingDir: root, entryPoints: { 'pantry-app': 'js/app.js' }, outdir: 'js', chunkNames: 'chunks/[name]-[hash]',
+      bundle: true, splitting: true, format: 'esm', target: 'es2022', charset: 'utf8', minify: true, metafile: true, write: false, logLevel: 'silent' });
+    for (const file of bundle.outputFiles) {
+      const name = relative(root, file.path).split(sep).join('/');
+      const path = join(staging, name);
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, file.contents);
+      runtimeFiles.push(name);
+      copied += 1;
+    }
+    const startupChunks = bundle.metafile.outputs[entry].imports.filter(item => item.kind === 'import-statement' && !item.external);
     await writeFile(join(staging, 'config.js'),
       '// Generated production browser configuration. Public values only.\n' +
       `window.DRINKS_CONFIG = ${JSON.stringify(config, null, 2)};\n`);
@@ -102,14 +115,17 @@ export async function buildSite({ root = projectRoot, env = process.env } = {}) 
     for (const [name, source] of sourceFiles) {
       let versioned = source;
       if (extname(name) === '.html') {
-        versioned = source.replace(/\b(src|href)=(["'])(\.\/[^"'?#]+\.(?:css|js|woff2?))\2/g,
+        const bundledHtml = name === 'index.html' ? source.replace(/\s*<link rel="modulepreload"[^>]*>/g, '')
+          .replace('src="./js/app.js"', `src="./${entry}"`)
+          .replace('</head>', startupChunks.map(item => `  <link rel="modulepreload" href="./${item.path}">\n`).join('') + '</head>') : source;
+        versioned = bundledHtml.replace(/\b(src|href)=(["'])(\.\/[^"'?#]+\.(?:css|js|woff2?))\2/g,
           (_, attribute, quote, url) => `${attribute}=${quote}${url}?v=${revision}${quote}`)
           .replace('</head>', `  <meta name="pantry-release" content="${revision}">\n</head>`);
       } else if (extname(name) === '.css') {
         versioned = source.replace(/(url\(\s*["']?)(\.\/[^"')?#]+\.woff2?)(["']?\s*\))/g,
           (_,before,url,after)=>`${before}${url}?v=${revision}${after}`);
       } else if (extname(name) === '.js') {
-        versioned = source.replace(/(\b(?:from\s+|import\s*(?:\(\s*)?)["'])(\.\.?\/[^"'\s?#]+\.js)(["'])/g,
+        versioned = source.replace(/(\b(?:from\s*|import\s*(?:\(\s*)?)["'])(\.\.?\/[^"'\s?#]+\.js)(["'])/g,
           (_, before, url, quote) => `${before}${url}?v=${revision}${quote}`);
       }
       if (versioned !== source) await writeFile(join(staging, name), versioned);

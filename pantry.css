@@ -683,6 +683,9 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
   background: transparent;
 }
 .purchased-wish-art .drink-pack-group { width: 100%; height: auto; margin: 0; padding: 0; }
+.admin-restock-product { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.admin-restock-product > span { display: grid; gap: 4px; min-width: 0; }
+.snack-inventory-status { margin: 0 0 6px; }
 .purchased-wish-art .snack-product-art { width: 100%; height: 40px; }
 .purchased-wish-art:has(img) .purchased-wish-fallback { display: none; }
 .purchased-wish-fallback { color: #58694b; font-size: .65rem; }

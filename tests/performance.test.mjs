@@ -131,6 +131,35 @@ test('a confirmed purchase receipt updates the next public view with the selecte
   assert.equal(fresh.store.data.wishes[0].purchasedProduct.id, 'supply-snack-01');
 });
 
+test('the snack drawer cache exposes catalog availability without retaining warehouse observations', async () => {
+  const b = websiteBackend(), c = client(b);
+  b.send('supply-stocktake', { entries: [{ supplyId: 'supply-noodle-01', quantity: 6 }], recorder: '現場盤點姓名' });
+  const fresh = await c.store.readSnackDrawer();
+  assert.equal(fresh.supplies.find(item => item.id === 'supply-noodle-01').stock, 6);
+  const cached = c.store.cachedSnackDrawerPreview();
+  assert.equal(cached.supplies.find(item => item.id === 'supply-noodle-01').stock, null);
+  assert.equal(cached.supplyEvents, undefined);
+  assert.equal(cached.data.drinks, undefined);
+  assert.doesNotMatch(JSON.stringify(cached), /現場盤點姓名/);
+});
+
+test('an expiry correction changes one arrival batch even before the first count', () => {
+  const b = websiteBackend();
+  b.send('supply-arrival', { supplyId: 'supply-noodle-02', quantity: 6, expiresOn: '2099-03-01', recorder: '測試到貨' });
+  const row = b.sheets.SupplyHistory.rows[1];
+  const before = row.slice();
+  const input = { batchId: row[0], expectedExpiresOn: '2099-03-01', expiresOn: '2099-03-08', recorder: '測試更正' };
+  assert.equal(b.send('supply-expiry-correction', { ...input, expectedExpiresOn: '2099-03-02' }).state, 'rejected');
+  assert.equal(b.send('supply-expiry-correction', input, requestId).state, 'accepted');
+  assert.equal(b.send('supply-expiry-correction', input, requestId).state, 'accepted');
+  before[9] = '2099-03-08';
+  assert.deepEqual(row, before);
+  assert.equal(b.sheets.SupplyHistory.rows.length, 2);
+  const stock = b.ctx.warehouseData_().supplies.find(item => item.id === input.batchId.split(':').at(-1));
+  assert.equal(stock.stock, 6);
+  assert.equal(stock.lastCountAt, null);
+});
+
 test('named wishes resume the first vote after interruption without re-creating the proposal', async () => {
   const b = websiteBackend();
   let sequence = 0, interrupted = false;

@@ -43,9 +43,9 @@ test('production artifact contains only runtime files and always generates share
   assert.equal(result.output, join(root, 'dist'));
   assert.deepEqual(await filesUnder(result.output), [
     '.nojekyll', 'assets/holdwin-mark.png', 'assets/pantry-hand.woff2', 'assets/Pantry-Hand-OFL.txt', 'config.js', 'fridge.css', 'index.html',
-    'js/app.js', 'pantry.css', 'styles.css', 'theme.js', 'themes.css',
+    'js/app.js', 'js/pantry-app.js', 'pantry.css', 'styles.css', 'theme.js', 'themes.css',
   ].sort());
-  assert.equal(result.files, 12);
+  assert.equal(result.files, 13);
   const context = { window: {} };
   runInNewContext(await readFile(join(result.output, 'config.js'), 'utf8'), context);
   assert.equal(context.window.DRINKS_CONFIG.mode, 'shared');
@@ -112,7 +112,8 @@ test('releases bypass stale CSS and every cached module dependency without chang
   const first = await buildSite({ root, env: publicEnv });
   const check = async revision => {
     const built = await readFile(join(root, 'dist/index.html'), 'utf8');
-    for (const name of ['pantry.css', 'theme.js', 'config.js', 'js/app.js']) assert.ok(built.includes(`./${name}?v=${revision}`));
+    for (const name of ['pantry.css', 'theme.js', 'config.js', 'js/pantry-app.js']) assert.ok(built.includes(`./${name}?v=${revision}`));
+    assert.match(await readFile(join(root, 'dist/js/pantry-app.js'), 'utf8'), /pantryReady/);
     assert.ok(built.includes(`name="pantry-release" content="${revision}"`));
     const modules = await readFile(join(root, 'dist/js/app.js'), 'utf8');
     for (const name of ['fridge.js', 'domain.js']) assert.ok(modules.includes(`./${name}?v=${revision}`));

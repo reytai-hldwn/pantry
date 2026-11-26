@@ -67,7 +67,7 @@ try {
   assert.equal(updated.head, updated.paper, 'arrowhead and cloud use matching paper');
   assert.equal(await page.locator('.fridge-guide-wide .guide-hand-arrow').count(), 1, 'cached fridge.js was replaced too');
   const fresh = requests.slice(before).filter(path => /\.(?:css|js)(?:\?|$)/.test(path));
-  assert.ok(fresh.some(path => path.startsWith('/js/fridge.js?')));
+  assert.ok(fresh.some(path => path.startsWith('/js/pantry-app.js?')));
   for (const path of fresh) assert.equal(new URL(path, base).searchParams.get('v'), revision, 'all runtime requests use one release');
   await page.evaluate(async () => {
     const probe=document.createElement('h2');probe.id='product-character-probe';probe.textContent='后吉爾思';document.querySelector('#main').append(probe);

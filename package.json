@@ -12,6 +12,7 @@
     "build:site": "node scripts/build-site.mjs"
   },
   "devDependencies": {
-    "acorn": "8.15.0"
+    "acorn": "8.15.0",
+    "esbuild": "0.28.2"
   }
 }

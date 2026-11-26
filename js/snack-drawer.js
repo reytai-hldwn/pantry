@@ -4,13 +4,9 @@ import { SNACK_CATEGORIES, supplyLabel, supplyNameKey } from './supplies.js';
 import { SNACK_DRAWER_PRODUCTS } from './snack-drawer-catalog.js';
 import { renderPantryStockTabs } from './fridge.js';
 import { archivedFoodWishId } from './wish-support.js';
+import { snackDrawerCorners, snackDrawerCrop } from './snack-room.js';
 
-export const SNACK_DRAWER_SCENE = './assets/snacks/tea-room-drawer.webp';
 export const SNACK_DRAWER_CONTENTS = './assets/snacks/tea-room-drawer-contents.webp';
-const snackSceneSize = { width: 1446, height: 1087 };
-// The opening follows the perspective of the actual upper drawer in the illustration.
-const snackDrawerCorners = [[432, 762], [856, 749], [857, 791], [432, 808]];
-const snackDrawerCrop = { x: 432, y: 749, width: 425, height: 59 };
 
 const drawerCategories = [...SNACK_CATEGORIES, '泡麵'];
 const normalizeSnackSearch = text => text.normalize('NFKC').toLocaleLowerCase('zh-TW');
@@ -261,27 +257,8 @@ function renderSnackRanking({ unit, observed, rows } = {}) {
   return `<ol class="snack-ranking-list">${rows.map((row, index) => `<li><span class="popularity-rank" aria-hidden="true">${index + 1}</span><span class="snack-rank-name">${h(row.label)}</span><span>約 <strong>${row.weekly < .1 ? '少於 0.1' : snackRateFormatter.format(row.weekly)}</strong> ${h(unit)}／週</span></li>`).join('')}</ol><p class="popularity-note">最近 30 天 · 依實際盤點和入庫紀錄估算，每週以 5 個工作日計。</p>`;
 }
 
-export function mountSnackDrawer(root, showDetails, readWarehouse, historyActions) {
-  const { width, height } = snackSceneSize;
-  const crop = snackDrawerCrop;
-  const hitPoints = snackDrawerCorners.map(([x, y]) => [x - crop.x, y - crop.y]);
-  const hitShape = hitPoints.map(([x, y]) => `${x / crop.width * 100}% ${y / crop.height * 100}%`).join(',');
-  const hitBox = `left:${crop.x / width * 100}%;top:${crop.y / height * 100}%;width:${crop.width / width * 100}%;height:${crop.height / height * 100}%;clip-path:polygon(${hitShape})`;
-  root.innerHTML = `
-    <div class="pantry-heading snack-heading"><h1>零食抽屜</h1></div>
-    <section class="snack-room" aria-label="電視下方的零食抽屜">
-      <div class="snack-scene">
-        <img class="snack-scene-art" src="${SNACK_DRAWER_SCENE}" alt="茶水間裡，木質零食抽屜在電視下方" width="${width}" height="${height}">
-        <canvas width="${width}" height="${height}" aria-hidden="true"></canvas>
-        <button class="snack-hit" style="${hitBox}" type="button" aria-controls="snack-cabinet" aria-expanded="false" aria-label="拉開電視下方的抽屜">
-          <svg class="snack-hit-outline" viewBox="0 0 ${crop.width} ${crop.height}" preserveAspectRatio="none" aria-hidden="true">
-            <polygon points="${hitPoints.join(' ')}" vector-effect="non-scaling-stroke"></polygon>
-          </svg>
-        </button>
-        <span class="snack-guide-arrow" aria-hidden="true"></span>
-        <button class="snack-guide" type="button" aria-controls="snack-cabinet" aria-expanded="false">拉開零食抽屜</button>
-      </div>
-    </section>
+export function mountSnackDrawer(root, showDetails, readWarehouse, historyActions, { preview, initialRead } = {}) {
+  root.insertAdjacentHTML('beforeend', `
     <section class="snack-cabinet" id="snack-cabinet" aria-label="抽屜內的零食" hidden>
       <header class="snack-open-heading pantry-heading"><h2>今天，吃點什麼</h2><p class="page-description">想吃點鹹的，還是來點甜的？挑一份喜歡的零食，休息一下。</p></header>
       <div class="snack-controls">
@@ -290,6 +267,7 @@ export function mountSnackDrawer(root, showDetails, readWarehouse, historyAction
         <select aria-label="篩選零食小類"><option value="">全部小類</option>${drawerCategories.map(category => `<option value="${h(category)}">${h(category)}</option>`).join('')}</select>
         <button class="button button-small button-outline snack-close" type="button">推回抽屜</button>
       </div>
+      <p class="snack-inventory-status subtle" role="status" hidden></p>
       <div class="snack-tray" role="region" aria-label="零食分類" tabindex="0">
         <details class="snack-popularity">
           <summary class="popularity-heading"><h3>大家最近愛吃什麼？</h3><span class="popularity-period">每週</span></summary>
@@ -298,7 +276,7 @@ export function mountSnackDrawer(root, showDetails, readWarehouse, historyAction
         <div class="snack-shelves"></div>
       </div>
       <button class="snack-drawer-face" type="button"><span class="snack-handle" aria-hidden="true"></span>推回抽屜 <span aria-hidden="true">↑</span></button>
-    </section>`;
+    </section>`);
   const room = root.querySelector('.snack-room');
   // Start loading the illustrated contents ahead of the gesture. The drawer
   // remains usable while the image loads, and reduced-motion can skip it.
@@ -315,18 +293,21 @@ export function mountSnackDrawer(root, showDetails, readWarehouse, historyAction
   const filter = root.querySelector('.snack-controls select');
   const tray = root.querySelector('.snack-tray');
   const shelves = tray.querySelector('.snack-shelves');
+  const status = cabinet.querySelector('.snack-inventory-status');
   const popularity = tray.querySelector('.snack-popularity');
   const rankingContent = tray.querySelector('.snack-ranking-content');
   const tabs = [...cabinet.querySelectorAll('[data-pantry-stock]')];
   let opener;
   let moving = false;
   let archived = false;
-  let warehouse;
+  let warehouse = preview;
+  let warehouseIsPreview = Boolean(preview);
+  let lastReadAt = -Infinity;
   let warehouseRequest;
   let products = new Map();
 
   function renderRankings() {
-    if (!warehouse) {
+    if (!warehouse || warehouseIsPreview) {
       rankingContent.innerHTML = `<p class="popularity-status" role="status">${warehouseRequest ? '正在讀取零食盤點紀錄…' : '排行榜暫時無法讀取。'}</p>`;
       return;
     }
@@ -341,19 +322,26 @@ export function mountSnackDrawer(root, showDetails, readWarehouse, historyAction
   }
 
   function renderTray() {
-    if (!warehouse) return;
+    if (!warehouse || cabinet.hidden) return;
     const items = stockDrawerProducts(warehouse.supplies, archived);
     products = new Map(items.map(product => [product.key, product]));
     shelves.innerHTML = snackShelves(items, search.value, filter.value, archived && (product => historyActions(product, warehouse.data?.wishes || [])));
     tray.scrollTop = 0;
   }
 
-  function refreshInventory(force = false) {
+  function refreshInventory(force = false, started) {
     if (warehouseRequest) return warehouseRequest;
     if (!warehouse) shelves.innerHTML = '<p class="snack-empty" role="status">正在讀取庫存…</p>';
-    warehouseRequest = readWarehouse(force).then(result => {
+    if (warehouseIsPreview) {
+      status.textContent = '顯示上次讀取的品項，正在更新…';
+      status.hidden = false;
+    }
+    warehouseRequest = (started || readWarehouse(force)).then(result => {
       if (!root.isConnected) return;
       warehouse = result;
+      lastReadAt = Date.now();
+      warehouseIsPreview = false;
+      status.hidden = true;
       renderTray();
       if (popularity.open) renderRankings();
     }).catch(error => {
@@ -362,6 +350,7 @@ export function mountSnackDrawer(root, showDetails, readWarehouse, historyAction
         shelves.querySelector('button').addEventListener('click', () => refreshInventory(true).catch(() => {}));
         rankingContent.innerHTML = '<p class="popularity-status" role="status">排行榜暫時無法讀取。</p>';
       }
+      if (root.isConnected && warehouseIsPreview) status.textContent = '暫時無法更新，顯示上次讀取的品項。';
       throw error;
     }).finally(() => { warehouseRequest = undefined; });
     return warehouseRequest;
@@ -388,12 +377,13 @@ export function mountSnackDrawer(root, showDetails, readWarehouse, historyAction
     if (open) {
       opener = trigger;
       setArchived(false);
-      refreshInventory().catch(() => {});
+      if (Date.now() - lastReadAt >= 30000) refreshInventory().catch(() => {});
       room.classList.add('is-pulling');
       await animateSnackPull(room, contents, 0, 1);
       if (!room.isConnected) return;
       room.hidden = true;
       cabinet.hidden = false;
+      renderTray();
       close.focus({ preventScroll: true });
     } else {
       cabinet.hidden = true;
@@ -420,6 +410,7 @@ export function mountSnackDrawer(root, showDetails, readWarehouse, historyAction
     const product = products.get(event.target.closest('[data-snack-product-key]')?.dataset.snackProductKey);
     if (product) openDrawerProduct(product, showDetails);
   });
+  if (initialRead) refreshInventory(false, initialRead).catch(() => {});
   return {
     refreshInventory,
     archivedProduct: key => archived ? products.get(key) : null,

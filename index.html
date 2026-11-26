@@ -6,14 +6,16 @@
   <meta name="theme-color" content="#ad895d">
   <meta name="description" content="公司的小小茶水間：定期盤點、補貨管理與飲料、零食採買許願清單。">
   <title>宏穩茶水間 · 飲料庫存</title>
-  <link rel="preload" href="./assets/pantry-ui.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="./assets/pantry-mobile.webp" as="image" media="(max-width: 900px)">
-  <script>
-    if (!location.hash || location.hash === '#overview') {
+  <script id="pantry-entry-hints">
+    const pane = location.hash;
+    const room = pane === '#snack-drawer' ? 'assets/snacks/tea-room-drawer.webp' :
+      ['', '#overview', '#overview-history', '#archive'].includes(pane) ?
+        matchMedia('(max-width: 900px)').matches ? 'assets/pantry-mobile.webp' :
+        matchMedia('(min-aspect-ratio: 8/5)').matches ? 'assets/pantry-office-wide.webp' : 'assets/pantry-office-portrait.webp' : '';
+    if (room) {
       const scenePreload = document.createElement('link');
       scenePreload.rel = 'preload'; scenePreload.as = 'image';
-      scenePreload.href = './assets/pantry-office-wide.webp';
-      scenePreload.media = '(min-width: 901px) and (min-aspect-ratio: 8/5)';
+      scenePreload.href = './' + room;
       document.head.appendChild(scenePreload);
     }
   </script>
@@ -29,6 +31,7 @@
   <link rel="stylesheet" href="./pantry.css">
   <script src="./theme.js"></script>
   <script src="./config.js"></script>
+  <script type="module" src="./js/early-inventory.js"></script>
   <script type="module" src="./js/app.js"></script>
 </head>
 <body>
