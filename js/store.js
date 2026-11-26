@@ -7,7 +7,7 @@ import { recordedBalances } from './inventory-activity.js';
 import { supplyNameKey, supplyLabel } from './supplies.js';
 import { RESTOCK_MODES, hasRecordedStock, isLowStockItem, restockPreferenceMode } from './restock-preferences.js';
 import { fulfilZeroRestocks } from './empty-stock.js';
-import { archivedFoodWishId, wishVoterName, wishWarehouseProducts } from './wish-support.js';
+import { WISH_PRODUCT_KINDS, archivedFoodWishId, wishVoterName, wishWarehouseProducts } from './wish-support.js';
 
 const DATA_KEY = 'office-pantry-demo-v1';
 const SESSION_KEY = 'office-pantry-session-v1';
@@ -423,7 +423,7 @@ export class InventoryStore {
   }
 
   async submitWish({ name, url = '', note = '', kind = 'drink' } = {}, { id, voterName } = {}) {
-    if (!['drink', 'snack'].includes(kind)) throw new Error('請選擇飲料許願或零食許願。');
+    if (!WISH_PRODUCT_KINDS.includes(kind)) throw new Error('請選擇許願類型。');
     if (this.mode !== 'demo' && kind !== 'drink') throw new Error('此舊版共用介接尚未支援零食許願，請改用 Google 共用模式。');
     if (typeof name !== 'string' || !name.trim()) throw new Error('請填寫品項名稱。');
     if (typeof url !== 'string' || typeof note !== 'string') throw new Error('請填寫有效的連結與備註。');

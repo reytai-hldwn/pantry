@@ -47,8 +47,8 @@ try{
   await page.locator('.fridge-door').click();await page.waitForSelector('.fridge.is-ready');assert.equal(await page.locator('.fridge-popularity').evaluate(node=>node.open),false);assert.equal(reads.filter(action=>action==='popularity').length,0);await page.locator('.fridge-popularity>summary').focus();await page.keyboard.press('Enter');await stats.started;
   assert.equal(await page.locator('.fridge-product').count(),32);assert.match(await page.locator('.fridge-popularity').innerText(),/正在整理/);
   await page.locator('#search').fill('光泉牛乳');assert.equal(await page.locator('.fridge-product').count(),1);
-  await page.locator('.fridge-panel [data-pantry-stock=history]').click();await page.waitForSelector('.archive-card');stats.release();
-  await page.waitForTimeout(200);assert.equal(await page.locator('.archive-card').count(),8,'late stats never change the selected inventory');
+  await page.locator('.fridge-panel [data-pantry-stock=history]').click();await page.waitForSelector('[data-archived-drink-id]');stats.release();
+  await page.waitForTimeout(200);assert.equal(await page.locator('[data-archived-drink-id]').count(),8,'late stats never change the selected inventory');
   await page.locator('.fridge-panel [data-pantry-stock=current]').click();await page.waitForSelector('.popular-drink');
   const cards=page.locator('.popular-drink');assert.equal(await cards.count(),2);
   assert.match(await cards.first().innerText(),/32.*包／週/s);assert.match(await cards.nth(1).innerText(),/20.*包／週/s);

@@ -1478,5 +1478,46 @@ export const CHECKED_DRINK_LABELS = [
       "url": "https://www.costco.com.tw/Food-Dining/Drinks/Beverages-Juice/Glico-Almond-Koka-Unsweetened-200-ml-X-12-Count/p/235621",
       "labelUrl": "https://www.costco.com.tw/medias/sys_master/images/h33/h0f/488032648003614.jpg"
     }
+  },
+  {
+    "names": [
+      "光泉豆漿無加糖",
+      "光泉無加糖豆漿",
+      "光泉豆漿-無加糖"
+    ],
+    "packaging": "鋁箔包",
+    "acceptUnclassifiedPackaging": true,
+    "container": "200 毫升",
+    "ingredients": "水、非基因改造黃豆",
+    "allergens": "本產品含蛋及大豆，對其過敏者不宜食用。該產線亦生產含芒果、花生、芝麻、牛奶、蛋、堅果類、含麩質之穀物及大豆製品。",
+    "nutrition": {
+      "basis": "每份 200 毫升，本包裝含 1 份",
+      "energyKcal": 72.4,
+      "proteinG": 6.8,
+      "fatG": 3.6,
+      "saturatedFatG": 0.6,
+      "transFatG": 0,
+      "carbohydrateG": 3.2,
+      "sugarG": 1.4,
+      "sodiumMg": 22,
+      "per100": {
+        "energyKcal": 36.2,
+        "proteinG": 3.4,
+        "fatG": 1.8,
+        "saturatedFatG": 0.3,
+        "transFatG": 0,
+        "carbohydrateG": 1.6,
+        "sugarG": 0.7,
+        "sodiumMg": 11
+      }
+    },
+    "source": {
+      "type": "retailer-label",
+      "label": "萬家福商品頁與光泉包裝標籤",
+      "checkedAt": "2026-11-26",
+      "scope": "依 200 毫升無加糖豆漿包裝標示轉錄。",
+      "url": "https://online.uni-prosperity.com.tw/zh/1502302500124.html",
+      "labelUrl": "https://online.uni-prosperity.com.tw/on/demandware.static/-/Sites-uniprosperity-tw-m-inner/default/dw1278a198/images/others/20250819111251824196.jpg"
+    }
   }
 ];

@@ -3,7 +3,7 @@ import { renderFoodNutrition } from './food-nutrition.js';
 import { buildConsumptionRecords, consumptionPeriod, selectConsumption } from './consumption.js';
 import { SNACK_CATEGORIES, supplyLabel, supplyNameKey } from './supplies.js';
 import { SNACK_DRAWER_PRODUCTS } from './snack-drawer-catalog.js';
-import { renderPantryStockTabs, renderPantryCategoryBar, selectPantryCategory } from './fridge.js';
+import { renderPantryStockTabs, renderPantryCategoryBar, selectPantryCategory, renderPantryShelfSkeleton, bindPantryShelfBounce } from './fridge.js';
 import { archivedFoodWishId } from './wish-support.js';
 import { snackDrawerCorners, snackDrawerCrop } from './snack-room.js';
 
@@ -254,11 +254,13 @@ export function mountSnackDrawer(root, showDetails, readWarehouse, historyAction
       ${renderPantryCategoryBar(drawerCategories, '', '零食與泡麵分類')}
       <p class="snack-inventory-status subtle" role="status" hidden></p>
       <div class="snack-tray" role="region" aria-label="零食分類" tabindex="0">
+        <div data-shelf-content>
         <details class="snack-popularity">
           <summary class="popularity-heading"><h3>大家最近愛吃什麼？</h3><span class="popularity-period">每週</span></summary>
           <div class="snack-ranking-content"></div>
         </details>
-        <div class="snack-shelves"></div>
+        <div class="snack-shelves">${renderPantryShelfSkeleton('正在讀取庫存…')}</div>
+        </div>
       </div>
       <button class="snack-drawer-face" type="button"><span class="snack-handle" aria-hidden="true"></span>推回抽屜 <span aria-hidden="true">↑</span></button>
     </section>`);
@@ -277,6 +279,7 @@ export function mountSnackDrawer(root, showDetails, readWarehouse, historyAction
   const search = root.querySelector('.snack-search input');
   const categoryBar = cabinet.querySelector('.pantry-category-bar');
   const tray = root.querySelector('.snack-tray');
+  bindPantryShelfBounce(tray);
   const shelves = tray.querySelector('.snack-shelves');
   const status = cabinet.querySelector('.snack-inventory-status');
   const popularity = tray.querySelector('.snack-popularity');
@@ -317,7 +320,7 @@ export function mountSnackDrawer(root, showDetails, readWarehouse, historyAction
 
   function refreshInventory(force = false, started) {
     if (warehouseRequest) return warehouseRequest;
-    if (!warehouse) shelves.innerHTML = '<p class="snack-empty" role="status">正在讀取庫存…</p>';
+    if (!warehouse) shelves.innerHTML = renderPantryShelfSkeleton('正在讀取庫存…');
     if (warehouseIsPreview) {
       status.textContent = '顯示上次讀取的品項，正在更新…';
       status.hidden = false;
@@ -371,7 +374,12 @@ export function mountSnackDrawer(root, showDetails, readWarehouse, historyAction
       if (!room.isConnected) return;
       room.hidden = true;
       cabinet.hidden = false;
-      renderTray();
+      if (warehouse && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        shelves.innerHTML = renderPantryShelfSkeleton('正在整理零食…');
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          if (shelves.querySelector('.pantry-skeleton')) renderTray();
+        }));
+      } else renderTray();
       close.focus({ preventScroll: true });
     } else {
       cabinet.hidden = true;

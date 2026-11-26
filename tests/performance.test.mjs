@@ -187,6 +187,24 @@ test('named wishes resume the first vote after interruption without re-creating 
   assert.deepEqual(c.store.data.wishes[0].supporters, ['甲']);
 });
 
+test('new wish categories survive named receipts, changes in votes, and a fresh read from the existing Google deployment', async () => {
+  const b = websiteBackend();
+  let sequence = 0;
+  const createRequestId = () => `typed-wish-test-request-${++sequence}`;
+  const { store } = client(b, { createRequestId });
+  await store.init();
+  for (const [kind, name] of [['noodle', '測試泡麵'], ['frozen', '測試冰品']]) {
+    await store.submitNamedWish({ kind, name, note: '備註', url: '' }, '甲');
+    const saved = store.data.wishes.find(wish => wish.name === name);
+    assert.equal(saved.kind, kind);
+    assert.equal(saved.note, '備註');
+    assert.deepEqual(saved.supporters, ['甲']);
+    const fresh = client(b, { createRequestId }).store;
+    await fresh.init();
+    assert.equal(fresh.data.wishes.find(wish => wish.id === saved.id).kind, kind);
+  }
+});
+
 test('two browsers can register names for the same archived bowl with one shared wish', async () => {
   const b = websiteBackend();
   let sequence = 0;

@@ -73,10 +73,20 @@ try{for(const width of [1440,390]){
     await page.evaluate(()=>{location.hash='products';});await page.waitForSelector('[data-action=warehouse-kind]');await page.locator(`[data-action=warehouse-kind][data-id=${kind}]`).click();await page.locator('[data-action=supply-stock-filter][data-id=archived]').click();const row=page.locator(`[data-supply-id=${id}]`);assert.equal(await row.count(),1);assert.equal(await row.locator('[data-action=supply-count]').count(),0);
     await row.locator('[data-action=supply-arrival]').click();await page.locator('#supply-arrival-form [name=quantity]').fill('2');await page.locator('#supply-arrival-form [name=recorder]').fill('虛構到貨者');if(kind==='noodle')await page.locator('#supply-arrival-form [name=expiresOn]').fill('2099-01-01');await page.locator('#supply-arrival-form [type=submit]').click();await page.waitForFunction(()=>!document.querySelector('#modal').open);assert.equal(b.sheets.SupplyCatalog.rows.find(row=>row[0]===id)[4],true);
   }
-  await page.evaluate(()=>{location.hash='archive';});await page.waitForSelector('[data-action=archive-wish]');const archiveButton=page.locator('[data-action=archive-wish]');assert.match(await archiveButton.innerText(),/我還想喝，希望有機會可以再買/);
-  await archiveButton.click();await page.locator('#archive-wish-form [name=voterName]').fill('Rey');await page.locator('#archive-wish-form [type=submit]').click();await page.waitForSelector('[data-action=archive-wish].is-voted');assert.equal(posts.filter(command=>command.operation==='archive-wish').length,1);assert.equal(b.sheets.WishReview.rows.length,2);assert.equal(b.sheets.WishVotes.rows.length,2);
-  assert.match(await page.locator('.archive-wish-actions').innerText(),/1 人還想喝/);await page.locator('.archive-wish-actions [data-action=view-wish-supporters]').click();assert.match(await page.locator('.wish-supporter-list').innerText(),/Rey/);await page.locator('#modal [data-action=close-modal]').first().click();
-  await page.reload({waitUntil:'domcontentloaded'});await page.waitForSelector('[data-action=archive-wish].is-voted');await page.evaluate(()=>{location.hash='wishes';});await page.waitForSelector('.wish-card');assert.match(await page.locator('.wish-card').innerText(),/舊飲料.*我還想喝/s);
+  await page.evaluate(()=>{location.hash='archive';});
+  const historyItem=page.locator('[data-archived-drink-id=old] [data-action=view-drink]');
+  await historyItem.click();
+  const archiveButton=page.locator('#modal [data-action=archive-wish]');
+  assert.match(await archiveButton.innerText(),/我還想喝，希望有機會可以再買/);
+  await archiveButton.click();await page.locator('#archive-wish-form [name=voterName]').fill('Rey');await page.locator('#archive-wish-form [type=submit]').click();
+  await page.waitForURL('**/#wishes');
+  assert.equal(posts.filter(command=>command.operation==='archive-wish').length,1);assert.equal(b.sheets.WishReview.rows.length,2);assert.equal(b.sheets.WishVotes.rows.length,2);
+  const revived=page.locator('.wish-card').filter({hasText:'舊飲料'});
+  assert.match(await revived.innerText(),/我還想喝/);
+  await revived.locator('[data-action=view-wish-supporters]').click();assert.match(await page.locator('.wish-supporter-list').innerText(),/Rey/);
+  await page.locator('#modal [data-action=close-modal]').first().click();
+  await page.reload({waitUntil:'domcontentloaded'});await revived.waitFor();
+  await page.evaluate(()=>{location.hash='archive';});await historyItem.click();assert.equal(await archiveButton.isDisabled(),true);
   assert.deepEqual(errors,[]);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));await page.screenshot({path:`/tmp/pantry-admin-archive-${width}.png`,fullPage:true});
   console.log(`PASS ${width}: immediate admin entry, collapsed keyboard-accessible summaries with async state persistence, separate zero-stock lists and category drilldowns that clear stale searches, manual refill priority and red quantities, shared archived return wishes, named supporters and one browser one vote`);await context.close();
 }}finally{await browser.close();await new Promise(resolve=>server.close(resolve));}

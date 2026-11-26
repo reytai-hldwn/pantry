@@ -92,6 +92,11 @@ function googleProductForm(value) {
   return url;
 }
 
+// The current Google deployment accepts drink and snack requests. Keep the
+// subtype in the request ID so it survives receipts, later votes and reloads.
+const typedWishPrefix = kind => kind === 'noodle' || kind === 'frozen' ? `wish-kind-${kind}-v1-` : '';
+const kindFromWishId = id => /^wish-web-wish-kind-(noodle|frozen)-v1-/.exec(id)?.[1];
+
 function normalizeGoogleWish(row) {
   if (!row || typeof row !== 'object') throw new Error('Google 許願清單格式不正確。');
   const url = row.url ? safeUrl(row.url) : '';
@@ -100,8 +105,9 @@ function normalizeGoogleWish(row) {
   if (typeof row.createdAt !== 'string' || !Number.isFinite(Date.parse(row.createdAt))) throw new Error('Google 願望日期格式不正確。');
   const id = textField(row.id, '願望代號', 160);
   const name = textField(row.name, '願望名稱', 80);
-  const kind = row.kind === undefined ? 'drink' : row.kind;
-  if (!['drink', 'snack'].includes(kind)) throw new Error('Google 願望分類格式不正確。');
+  const savedKind = row.kind === undefined ? 'drink' : row.kind;
+  if (!WISH_PRODUCT_KINDS.includes(savedKind)) throw new Error('Google 願望分類格式不正確。');
+  const kind = savedKind === 'snack' ? kindFromWishId(id) || savedKind : savedKind;
   const votes = row.votes === undefined ? 0 : googleQuantityField(row.votes, '贊同人數');
   const supporters = row.supporters === undefined ? [] : row.supporters;
   if (!Array.isArray(supporters) || supporters.length > 5000 || supporters.length > votes) throw new Error('Google 贊同名單格式不正確。');
@@ -921,10 +927,14 @@ export class GoogleInventoryStore {
 
   async submitWish({ kind, name, url = '', note = '' }, options) {
     if (!this.supportsWebsiteEntry) throw new Error('請先更新 Google Apps Script 的 Code.gs，並部署新版本，才能直接在網站送出。');
-    if (!['drink', 'snack'].includes(kind) || typeof name !== 'string' || !name.trim() || name.trim().length > 80 || typeof note !== 'string' || note.length > 500) throw new Error('請選擇類型並填寫有效的品項名稱與備註。');
+    if (!WISH_PRODUCT_KINDS.includes(kind) || typeof name !== 'string' || !name.trim() || name.trim().length > 80 || typeof note !== 'string' || note.length > 500) throw new Error('請選擇類型並填寫有效的品項名稱與備註。');
     const link = url ? safeUrl(url) : '';
     if (url && !link) throw new Error('請填寫有效的 http 或 https 連結。');
-    return this.sendWebsiteCommand('wish', { kind, name: name.trim(), url: link, note: note.trim() }, options);
+    const prefix = typedWishPrefix(kind);
+    if (prefix && !options?.requestId?.startsWith(prefix)) {
+      options = { ...options, requestId: prefix + (options?.requestId || this.createRequestId()) };
+    }
+    return this.sendWebsiteCommand('wish', { kind: prefix ? 'snack' : kind, name: name.trim(), url: link, note: note.trim() }, options);
   }
 
   async ensureWish(id, data) {
@@ -941,7 +951,7 @@ export class GoogleInventoryStore {
     const key = `holdwin-named-wish-v1:${this.url}:${JSON.stringify({ data, name })}`;
     let requestId;
     try {
-      requestId = storage.getItem(key) || this.createRequestId();
+      requestId = storage.getItem(key) || typedWishPrefix(data.kind) + this.createRequestId();
       if (!/^[A-Za-z0-9_-]{20,100}$/.test(requestId)) throw new Error('Invalid request ID');
       storage.setItem(key, requestId);
     } catch { throw new Error('請允許此網站儲存送出進度，才能安全重試許願。'); }

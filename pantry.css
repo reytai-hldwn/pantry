@@ -98,11 +98,6 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
 .fridge-panel > .toolbar .pantry-stock-tabs { flex: 0 0 auto; max-width: none; }
 .pantry-stock-tabs { width: max-content; max-width: 100%; }
 .pantry-stock-tabs .filter-tab, .fridge-panel > .toolbar .pantry-stock-tabs .filter-tab { flex: 1; min-width: 0; min-height: 40px; padding: 7px 12px; font-size: .84rem; }
-.fridge-archive > h2 { margin: 0 0 14px; color: #70523e; font-size: 1.25rem; }
-.fridge-archive .archive-card .form-actions { justify-content: center; }
-.fridge-archive .archive-card { overflow-wrap: anywhere; }
-.fridge-archive .archive-card h3 { font-size: .875rem; line-height: 1.7; }
-.fridge-archive .archive-grid > .subtle { grid-column: 1/-1; }
 .fridge-panel .search-controls{width:100%;gap:13px}
 .fridge-panel .search-field{flex:1;min-width:0}
 .fridge-panel .search-field input{width:100%;font-size:13px;padding:13px 16px 13px 39px;background:#fff;border-color:#bb9578;border-radius:14px 12px 13px 11px}
@@ -323,19 +318,21 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
 .gacha-drink button.text-link,.gacha-retry{padding:0;border:0;background:transparent;cursor:pointer;text-align:left;font-family:inherit}
 .gacha-drink button.text-link{min-height:36px}
 .gacha-snack {
-  margin-top: 18px;
-  padding: 15px 16px 12px;
-  border: 1px solid #e8dac4;
-  border-radius: 11px 14px 10px 12px;
-  background: #fffdf7;
+  margin-top: 14px;
+  padding: 12px 0 8px;
+  min-width: 0;
   overflow-wrap: anywhere;
 }
-.gacha-snack:has(.gacha-snack-photo:not([hidden])) {
+.gacha-snack:has(.gacha-snack-photo) {
   display: grid;
-  grid-template-columns: clamp(64px, 19vw, 92px) minmax(0, 1fr);
+  grid-template-columns: 92px minmax(0, 1fr);
   align-items: center;
-  gap: clamp(10px, 2.5vw, 18px);
+  gap: 18px;
 }
+@media (max-width: 800px) {
+  .gacha-snack:has(.gacha-snack-photo) { grid-template-columns: 76px minmax(0, 1fr); gap: 16px; }
+}
+.gacha-snack-photo + div { grid-column: 2; }
 .gacha-snack-photo .snack-product-art {
   width: 100%;
   height: auto;
@@ -830,3 +827,51 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
   .snack-cabinet { animation: none; }
   .snack-guide, .snack-guide-arrow { transition: none; }
 }
+
+.wish-confetti {
+  position: fixed;
+  z-index: 1100;
+  left: 50%;
+  top: min(29vh, 240px);
+  pointer-events: none;
+}
+.wish-confetti > i { position: absolute; width: 6px; height: 10px; border-radius: 1px; }
+.wish-confetti > i:nth-child(3n) { height: 6px; border-radius: 50%; }
+
+.fridge-interior, .snack-tray { overscroll-behavior-y: none; }
+.pantry-skeleton { padding-block: 10px; }
+.pantry-skeleton-grid > i { position: relative; height: 151px; border-bottom: 1px solid #e4d7c6; }
+.pantry-skeleton-grid > i::before,
+.pantry-skeleton-grid > i::after { content: ""; position: absolute; background: #eee5d8; border-radius: 7px; left: 50%; transform: translateX(-50%); }
+.pantry-skeleton-grid > i::before { top: 9px; width: min(62%, 66px); height: 101px; }
+.pantry-skeleton-grid > i:nth-child(3n + 1)::before { width: min(53%, 53px); height: 108px; top: 2px; border-radius: 14px 14px 6px 6px; }
+.pantry-skeleton-grid > i::after { top: 124px; width: 66%; height: 9px; }
+.snack-shelves .pantry-skeleton { padding: 16px 14px 0; }
+.snack-shelves .pantry-skeleton-grid > i::before { top: 30px; width: min(77%, 105px); height: 79px; border-radius: 10px; }
+.fridge-opening-skeleton { display: none; }
+.fridge[data-door-state="opening"] .fridge-opening-skeleton { display: block; }
+.fridge[data-door-state="opening"] [data-shelf-content] { display: none; }
+
+.fridge-history-title { margin: 0 0 16px; color: #715441; font-size: 1.15rem; }
+.fridge-product.is-archived :is(.drink-pack-group, .frozen-product-photo) { filter: brightness(.69) saturate(.72); }
+.fridge-window .fridge-product.is-archived .fridge-product-edit {
+  inset: 0; width: 100%; height: 100%; background: transparent; border: 0; border-radius: 5px;
+}
+.fridge-product.is-archived .fridge-product-edit .fridge-detail-arrow { position: absolute; inset-inline-end: 7px; inset-block-end: 12px; }
+.archive-detail-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin-bottom: 16px; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .pantry-skeleton-grid > i { animation: pantry-skeleton-pulse 1.45s ease-in-out infinite alternate; }
+  .fridge.is-ready .fridge-products > .fridge-product,
+  .snack-cabinet:not([hidden]) .snack-products > * {
+    animation: pantry-card-entry 240ms ease-out backwards;
+    animation-delay: var(--entry-delay, 0ms);
+  }
+  :is(.fridge-products, .snack-products) > :nth-child(6n + 2) { --entry-delay: 32ms; }
+  :is(.fridge-products, .snack-products) > :nth-child(6n + 3) { --entry-delay: 64ms; }
+  :is(.fridge-products, .snack-products) > :nth-child(6n + 4) { --entry-delay: 96ms; }
+  :is(.fridge-products, .snack-products) > :nth-child(6n + 5) { --entry-delay: 128ms; }
+  :is(.fridge-products, .snack-products) > :nth-child(6n) { --entry-delay: 160ms; }
+}
+@keyframes pantry-skeleton-pulse { from { opacity: .65; } to { opacity: 1; } }
+@keyframes pantry-card-entry { from { opacity: 0; translate: 0 7px; } to { opacity: 1; translate: 0 0; } }

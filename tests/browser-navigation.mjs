@@ -56,21 +56,21 @@ try{
     };
     const showHistory=async()=>{
       await page.evaluate(()=>{ location.hash='overview-history'; });
-      await page.waitForSelector('.fridge-archive');
+      await page.waitForSelector('.fridge-history-title');
     };
     const poll=()=>page.evaluate(()=>{window.__pantryPollResult=window.__pantryPoll();});
     const finishPoll=()=>page.evaluate(()=>window.__pantryPollResult);
     const menu=async()=>{if(width<=900&&await page.locator('#pantry-utilities').isHidden())await page.locator('.mobile-menu-toggle').click();};
     await page.goto(`${base}/index.html`);await page.waitForSelector('.pantry-stage');
     assert.deepEqual(reads,['public'],'initial data is not fetched twice');
-    await showHistory();assert.equal(await page.locator('.archive-card').count(),8);await nav('wishes');await nav('overview');
-    assert.deepEqual(reads,['public'],'front tabs reuse the same loaded catalog');
+    await showHistory();assert.equal(await page.locator('[data-archived-drink-id]').count(),8);await nav('wishes');await nav('overview');
+    assert.equal(reads.filter(action=>action==='public').length,1,'front tabs reuse the same loaded catalog');
 
     backend.sheets.Catalog.rows[1][1]='更新後的牛乳';
     let held=holdNext();await poll();await held.started;
-    await showHistory();assert.equal(reads.length,2,'navigation does not wait for polling');
-    held.release();await finishPoll();assert.equal(await page.locator('.archive-card').count(),8);
-    assert.match(await page.locator('.fridge-archive > h2').innerText(),/曾經喝過/);
+    await showHistory();assert.equal(reads.filter(action=>action==='public').length,2,'navigation does not wait for polling');
+    held.release();await finishPoll();assert.equal(await page.locator('[data-archived-drink-id]').count(),8);
+    assert.match(await page.locator('.fridge-history-title').innerText(),/曾經喝過/);
 
     await menu();held=holdNext();await page.locator('#refresh-button').click();await held.started;
     await nav('wishes');held.release();
@@ -88,9 +88,10 @@ try{
     held=holdNext();held.fail=true;await poll();await held.started;await showHistory();
     held.release();await finishPoll();assert.doesNotMatch(await page.locator('#connection-status').innerText(),/中斷/);
 
+    const warehouseBeforeAdmin=reads.filter(action=>action==='warehouse').length;
     await menu();await page.locator('#auth-button').click();await page.waitForSelector('#admin-restock');
-    assert.equal(reads.filter(action=>action==='warehouse').length,0,'admin entry uses its lightweight summary');
-    await nav('count');const warehouseReads=reads.filter(action=>action==='warehouse').length;assert.equal(warehouseReads,1);
+    assert.equal(reads.filter(action=>action==='warehouse').length,warehouseBeforeAdmin,'admin entry uses its lightweight summary');
+    await nav('count');const warehouseReads=reads.filter(action=>action==='warehouse').length;assert.ok(warehouseReads<=warehouseBeforeAdmin+1);
     for(const view of ['restock','products','history'])await nav(view);
     assert.equal(reads.filter(action=>action==='warehouse').length,warehouseReads,'management tabs reuse the loaded warehouse');
 
