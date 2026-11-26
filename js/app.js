@@ -232,7 +232,7 @@ function inventoryToolbar(warehouse = false) {
   const categories = categoryNames();
   return `<div class="toolbar">${warehouse ? `<div class="filter-tabs" role="group" aria-label="倉庫篩選">${[['low', '庫存量少'], ['all', '供應中'], ['archived', '歷史品項']].map(([value, label]) => `<button class="filter-tab ${filter === value ? 'selected' : ''}" data-filter="${value}" aria-pressed="${filter === value}">${label}</button>`).join('')}</div>` : ''}
     <div class="search-controls"><label class="search-field"><span aria-hidden="true">⌕</span><input id="search" type="search" maxlength="80" placeholder="找找${itemTypes}…" aria-label="搜尋${itemTypes}" value="${h(query)}"></label>${warehouse ? `<select id="category-filter" aria-label="篩選飲料分類"><option value="">所有分類</option>${categories.map(name => `<option value="${h(name)}"${category === name ? ' selected' : ''}>${h(name)}</option>`).join('')}</select>` : ''}</div>
-    ${warehouse ? '' : renderPantryCategoryBar([...new Set([...categories.filter(name => name !== '咖啡'), '冰品'])], category, '飲料與冰品分類')}</div>`;
+    ${warehouse ? '' : renderPantryCategoryBar([...new Set([...categories.filter(name => name !== '咖啡'), '冰品'])], category, '飲料與冰品分類', true)}</div>`;
 }
 
 function renderOverview() {

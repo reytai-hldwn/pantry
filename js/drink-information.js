@@ -66,11 +66,21 @@ const NUTRIENT_ROWS = [
   ['carbohydrateG', '碳水化合物', '公克'], ['sugarG', '糖', '公克'], ['sodiumMg', '鈉', '毫克'],
 ];
 
+const ADDITIONAL_NUTRIENT_ROWS = [
+  ['calciumMg', '鈣', '毫克'], ['cholesterolMg', '膽固醇', '毫克'], ['dietaryFiberG', '膳食纖維', '公克'],
+  ['betaGlucanG', 'β-聚葡萄糖', '公克'], ['lactoseG', '乳糖', '公克'], ['ironMg', '鐵', '毫克'],
+  ['potassiumMg', '鉀', '毫克'], ['saltEquivalentG', '食鹽相當量', '公克'],
+  ['vitaminAMcgRe', '維生素 A', '微克 RE'], ['vitaminB1Mg', '維生素 B1', '毫克'],
+  ['vitaminB2Mg', '維生素 B2', '毫克'], ['vitaminB6Mg', '維生素 B6', '毫克'], ['vitaminB12Mcg', '維生素 B12', '微克'],
+  ['niacinMgNe', '菸鹼素', '毫克 NE'], ['pantothenicAcidMg', '泛酸', '毫克'], ['folateMcg', '葉酸', '微克'],
+  ['vitaminCMg', '維生素 C', '毫克'], ['vitaminDMcg', '維生素 D', '微克'], ['vitaminEMg', '維生素 E', '毫克 α-TE'],
+];
+
 export function renderDrinkInformation(drink) {
   const info = findDrinkInformation(drink);
   const pending = '<p class="subtle">尚待核對完整包裝標示。</p>';
   const nutrition = info?.nutrition;
-  const extraRows = [['calciumMg', '鈣', '毫克'], ['cholesterolMg', '膽固醇', '毫克'], ['dietaryFiberG', '膳食纖維', '公克'], ['betaGlucanG', 'β-聚葡萄糖', '公克'], ['lactoseG', '乳糖', '公克'], ['ironMg', '鐵', '毫克'], ['potassiumMg', '鉀', '毫克'], ['saltEquivalentG', '食鹽相當量', '公克'], ['vitaminEMg', '維生素 E', '毫克 α-TE']].filter(([key]) => nutrition?.[key] !== undefined);
+  const extraRows = ADDITIONAL_NUTRIENT_ROWS.filter(([key]) => nutrition?.[key] !== undefined);
   const nutrientValue = (value, unit) => {
     if (typeof value === 'number' && Number.isFinite(value)) return `${value} ${unit}`;
     if (value && Number.isFinite(value.min) && Number.isFinite(value.max) && value.min >= 0 && value.max >= value.min) return `${value.min}～${value.max} ${unit}`;

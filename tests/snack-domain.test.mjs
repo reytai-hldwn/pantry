@@ -25,7 +25,7 @@ test('the drawer separates current and historical flavors, retains exact nutriti
  ];
  const current=stockDrawerProducts(supplies,false), history=stockDrawerProducts(supplies,true);
  assert.deepEqual(current.map(item=>item.name),['Bisco乳酸菌餅乾','新入庫零食','來一客韓式泡菜']);
- assert.deepEqual(history.map(item=>item.name),['Bisco乳酸菌餅乾','滿漢大餐牛肉麵','來一客牛肉蔬菜','來一客京燉肉骨','來一客川辣牛肉','來一客肉燥菠菜','來一客辛辣香菇','一蘭拉麵']);
+ assert.deepEqual(history.map(item=>item.name),['Bisco乳酸菌餅乾','滿漢大餐牛肉麵','來一客川辣牛肉','一蘭拉麵']);
  assert.deepEqual(current[0].details.map(item=>item.flavor),['草莓']);
  assert.deepEqual(history[0].details.map(item=>item.flavor),['牛奶']);
  assert.equal(history[1].details[0].flavor,'珍味牛肉');

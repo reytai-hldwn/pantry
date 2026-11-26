@@ -110,7 +110,7 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
   scrollbar-width: thin;
   scrollbar-color: #c8ad8d transparent;
 }
-.fridge-panel .pantry-category-bar { grid-column: 1 / -1; }
+.fridge-panel .toolbar > .pantry-pager { grid-column: 1 / -1; }
 .pantry-category-button {
   flex: none;
   min-height: 38px;
@@ -898,6 +898,11 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
   overflow-x: hidden;
   scrollbar-width: none;
 }
+.pantry-pager .pantry-category-bar[data-pantry-page-track] {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+.pantry-pager .pantry-category-bar::-webkit-scrollbar { display: none; }
 .pantry-page-arrow {
   display: grid;
   place-items: center;

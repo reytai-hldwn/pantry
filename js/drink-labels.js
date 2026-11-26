@@ -1561,5 +1561,68 @@ export const CHECKED_DRINK_LABELS = [
       "url": "https://online.uni-prosperity.com.tw/zh/1502302500124.html",
       "labelUrl": "https://online.uni-prosperity.com.tw/on/demandware.static/-/Sites-uniprosperity-tw-m-inner/default/dw1278a198/images/others/20250819111251824196.jpg"
     }
+  },
+  {
+    "names": [
+      "威德 in 果凍（白葡萄）",
+      "威德in果凍",
+      "森永in果凍（能量）白葡萄"
+    ],
+    "packaging": "其他",
+    "container": "180 公克",
+    "ingredients": "水、麥芽糊精、高果糖玉米糖漿、白葡萄果汁、乳酸鈣、檸檬酸、結蘭膠、維生素 C、白葡萄香料、檸檬酸鈉、氯化鉀、三仙膠、乳化劑（脂肪酸蔗糖酯）、葡甘露聚糖、泛酸鈣、菸鹼酸、維生素 E、維生素 B1、維生素 B2、維生素 B6、維生素 A、葉酸、維生素 D、維生素 B12。",
+    "allergens": "本產品生產設備亦生產含牛奶及大豆類的相關產品。",
+    "nutrition": {
+      "basis": "每份 180 公克，單包 1 份，Costco 外盒共 18 份",
+      "per100Basis": "每 100 公克",
+      "energyKcal": 180,
+      "proteinG": 0,
+      "fatG": 0,
+      "saturatedFatG": 0,
+      "transFatG": 0,
+      "carbohydrateG": 45,
+      "sugarG": 12.6,
+      "sodiumMg": 49,
+      "vitaminAMcgRe": 65,
+      "vitaminB1Mg": 0.14,
+      "vitaminB2Mg": 0.22,
+      "vitaminB6Mg": 0.13,
+      "vitaminB12Mcg": 0.61,
+      "niacinMgNe": 1.3,
+      "pantothenicAcidMg": 1.8,
+      "folateMcg": 63,
+      "vitaminCMg": 148,
+      "vitaminDMcg": 1.1,
+      "vitaminEMg": 0.68,
+      "per100": {
+        "energyKcal": 100,
+        "proteinG": 0,
+        "fatG": 0,
+        "saturatedFatG": 0,
+        "transFatG": 0,
+        "carbohydrateG": 25,
+        "sugarG": 7,
+        "sodiumMg": 27,
+        "vitaminAMcgRe": 36,
+        "vitaminB1Mg": 0.08,
+        "vitaminB2Mg": 0.12,
+        "vitaminB6Mg": 0.07,
+        "vitaminB12Mcg": 0.34,
+        "niacinMgNe": 0.7,
+        "pantothenicAcidMg": 1,
+        "folateMcg": 35,
+        "vitaminCMg": 82,
+        "vitaminDMcg": 0.6,
+        "vitaminEMg": 0.38
+      }
+    },
+    "source": {
+      "type": "retailer-label",
+      "label": "Costco 好市多・森永 in 果凍（能量）白葡萄口味",
+      "checkedAt": "2026-11-26",
+      "scope": "依台灣版 180 公克白葡萄能量果凍的包裝標示轉錄。",
+      "url": "https://www.costco.com.tw/Health-Beauty/Sports-Performance/Sports-Energy/Morinaga-in-Jelly-Energy-White-Grape-Flavor-180-g-X-18-Count/p/107056",
+      "labelUrl": "https://www.costco.com.tw/mediapermalink/107056_desc_1-201202"
+    }
   }
 ];
