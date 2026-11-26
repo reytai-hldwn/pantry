@@ -6,7 +6,7 @@ import { InventoryStore } from './store.js';
 import { CATEGORIES_ORDER, DEFAULT_CASE_SIZE } from './catalog.js';
 import { drinkPack, renderFridge, renderFridgePopularity, renderPantryStockTabs, syncFridgeDoor, syncFridgeScene } from './fridge.js';
 import { GoogleInventoryStore } from './google-store.js';
-import { archivedFoodWishId, wishSupportDetails, wishSupportPreview, wishVoterName } from './wish-support.js';
+import { archivedFoodWishId, wishSupportDetails, wishSupportPreview, wishVoterName, WISH_PRODUCT_KINDS, wishWarehouseProducts } from './wish-support.js';
 import { renderDrinkInformation } from './drink-information.js';
 import { findProductPhoto } from './product-photos.js';
 import { initialSupplies, groupSnackItems, SUPPLY_KINDS, SNACK_CATEGORIES, SNACK_UNITS, supplyUnits, supplyNeedsExpiry, supplyBatches, supplyHasUntrackedExpiry, supplyExpiryStatus, supplyToday, validSupplyExpiry } from './supplies.js';
@@ -673,23 +673,38 @@ function updateRestockSummary() {
 
 const wishStatus = (status) => ({ pending: ['待評估', 'pill-low'], purchased: ['已購買', 'pill-ok'], declined: ['暫不採購', 'pill-muted'] })[status] || ['待評估', 'pill-low'];
 
-function wishReviewUrl() {
-  const warehouseUrl = safeUrl(store.adminUrl);
-  if (!warehouseUrl) return '';
-  const sheet = new URL(warehouseUrl);
+function legacyWishReviewLink() {
+  const url = safeUrl(store.adminUrl);
+  if (!url) return '';
+  const sheet = new URL(url);
   sheet.hash = new URLSearchParams({ range: 'WishReview!E2:E' }).toString();
-  return sheet.href;
+  return renderGoogleLink(sheet.href, '在試算表標記已購買');
 }
 
 function purchasedWishArt(wish) {
-  const kind = wishKind(wish);
-  const url = safeUrl(wish.url);
+  const linked = wish.purchasedProduct;
+  const kind = linked?.kind || wishKind(wish);
+  const url = linked ? '' : safeUrl(wish.url);
   const directImage = url && /\.(?:avif|gif|jpe?g|png|webp)$/i.test(new URL(url).pathname);
-  const drink = kind === 'drink' && (drinkById(wish.sourceDrinkId) || store.data.drinks.find(item => item.name === wish.name));
-  const photo = kind === 'drink' && findProductPhoto(drink?.name || wish.name);
+  const drink = kind === 'drink' && drinkById(linked?.id || wish.sourceDrinkId);
+  const photo = kind === 'drink' && findProductPhoto(drink?.name || linked?.name || wish.name);
   const source = directImage ? url : photo?.displaySrc || photo?.src;
-  const fallback = `<span class="purchased-wish-fallback" aria-hidden="true">${wishKindLabel(kind)}</span>`;
-  return `<span class="purchased-wish-art"${kind === 'snack' && !source ? ' data-purchased-snack-art' : ''}>${fallback}${source ? `<img src="${h(source)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : ''}</span>`;
+  const fallback = `<span class="purchased-wish-fallback" aria-hidden="true">${h(SUPPLY_KINDS[kind] || wishKindLabel(kind))}</span>`;
+  return `<span class="purchased-wish-art"${['snack', 'noodle'].includes(kind) && !source ? ' data-purchased-snack-art' : ''}>${fallback}${source ? `<img src="${h(source)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : ''}</span>`;
+}
+
+function hydratePurchasedWishArt(container, wish, outlineId) {
+  const art = container.querySelector('.purchased-wish-art');
+  if (!art) return;
+  const img = art.querySelector('img');
+  if (img) {
+    const removeBrokenImage = () => img.remove();
+    img.addEventListener('error', removeBrokenImage, { once: true });
+    if (img.complete && !img.naturalWidth) removeBrokenImage();
+  }
+  if (art.hasAttribute('data-purchased-snack-art')) loadSnackDrawerModule().then(({ renderPurchasedSnackArt }) => {
+    if (art.isConnected) art.insertAdjacentHTML('beforeend', renderPurchasedSnackArt(wish, outlineId));
+  }).catch(() => {});
 }
 
 function renderPurchasedWishes(wishes) {
@@ -699,7 +714,8 @@ function renderPurchasedWishes(wishes) {
       <div class="purchased-wishes-nav" hidden><button type="button" data-wish-slide="-1" aria-label="上一批已購買品項" aria-controls="purchased-wishes-list">‹</button><button type="button" data-wish-slide="1" aria-label="下一批已購買品項" aria-controls="purchased-wishes-list">›</button></div></div>
     <ul class="purchased-wishes-list" id="purchased-wishes-list" tabindex="0" aria-label="已購買的願望">${wishes.map(wish => {
     const url = safeUrl(wish.url);
-    const content = `${purchasedWishArt(wish)}<b>${h(wish.name)}</b>`;
+    const productLabel = wish.purchasedProduct ? supplyLabel(wish.purchasedProduct) : '';
+    const content = `${purchasedWishArt(wish)}<span class="purchased-wish-caption"><b>${h(wish.name)}</b>${productLabel && productLabel !== wish.name ? `<small title="${h(productLabel)}">${h(productLabel)}</small>` : ''}</span>`;
     return `<li data-purchased-wish-id="${h(wish.id)}">${url ? `<a href="${h(url)}" target="_blank" rel="noopener noreferrer">${content}</a>` : `<span class="purchased-wish-tile">${content}</span>`}</li>`;
   }).join('')}</ul></section>`;
 }
@@ -718,24 +734,12 @@ function syncPurchasedWishCarousel() {
 function bindPurchasedWishes(wishes) {
   const list = $('#purchased-wishes-list');
   if (!list) return;
-  const tiles = [...list.children];
   list.addEventListener('scroll', syncPurchasedWishCarousel, { passive: true });
   list.parentElement.querySelector('.purchased-wishes-nav').addEventListener('click', event => {
     const direction = Number(event.target.closest('[data-wish-slide]')?.dataset.wishSlide);
     if (direction) list.scrollBy({ left: direction * list.clientWidth, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
   });
-  list.querySelectorAll('.purchased-wish-art > img').forEach(img => {
-    const removeBrokenImage = () => img.remove();
-    img.addEventListener('error', removeBrokenImage, { once: true });
-    if (img.complete && !img.naturalWidth) removeBrokenImage();
-  });
-  if (list.querySelector('[data-purchased-snack-art]')) loadSnackDrawerModule().then(({ renderPurchasedSnackArt }) => {
-    if (!list.isConnected) return;
-    tiles.forEach((tile, index) => {
-      const art = tile.querySelector('[data-purchased-snack-art]');
-      if (art) art.insertAdjacentHTML('beforeend', renderPurchasedSnackArt(wishes[index]));
-    });
-  }).catch(() => {});
+  [...list.children].forEach((tile, index) => hydratePurchasedWishArt(tile, wishes[index], `purchased-outline-${index}`));
   syncPurchasedWishCarousel();
 }
 
@@ -744,16 +748,16 @@ window.addEventListener('resize', syncPurchasedWishCarousel);
 function renderWishes() {
   const managing = view === 'manage-wishes';
   const allWishes = [...store.data.wishes].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
-  const purchased = allWishes.filter(wish => wish.status === 'purchased');
+  const purchased = allWishes.filter(wish => wish.status === 'purchased')
+    .sort((a, b) => Date.parse(b.purchaseUpdatedAt || b.createdAt) - Date.parse(a.purchaseUpdatedAt || a.createdAt));
   const filter = managing ? wishManagementFilter : wishFilter;
   const wishes = managing
     ? allWishes.filter(wish => filter === 'all' || wish.status === filter)
     : allWishes.filter(wish => wish.status !== 'purchased' && (filter === 'all' || wishKind(wish) === filter));
   const options = managing ? [['all', '全部'], ['pending', '待評估'], ['purchased', '已購買'], ['declined', '暫不採購']] : [['all', '全部'], ['drink', '飲料'], ['snack', '零食']];
   const tabs = `<div class="wish-pool-tabs" role="group" aria-label="篩選採買願望">${options.map(([value, label]) => `<button type="button" class="filter-tab${filter === value ? ' selected' : ''}" data-action="wish-pool" data-id="${value}" aria-pressed="${filter === value}">${label}</button>`).join('')}</div>`;
-  const sheetUrl = managing && wishReviewUrl();
   const page = managing
-    ? heading('', '願望管理', sheetUrl ? '在試算表的 WishReview 分頁找到品項，將採購狀態填為 purchased，就會在許願池顯示為「已購買」。' : '查看採購狀態與贊同人數。', sheetUrl ? renderGoogleLink(sheetUrl, '在試算表標記已購買') : '')
+    ? heading('', '願望管理', store.supportsWishPurchases ? '勾選「已購買」，選取對應的倉庫品項，確認後就會顯示在許願池。' : '待 Google Apps Script 更新後，即可在這裡標記「已購買」並選取倉庫品項。', store.supportsWishPurchases ? '' : legacyWishReviewLink())
     : heading('SOMETHING TO LOOK FORWARD TO', '採買許願池', '留下想喝的飲料、想吃的零食，讓下一次採購多一點期待。', button('♡ 新增願望', 'new-wish'));
   main.innerHTML = page + (managing ? '' : renderPurchasedWishes(purchased)) + tabs +
     (wishes.length ? `<div class="wish-grid">${wishes.map((wish) => {
@@ -762,9 +766,20 @@ function renderWishes() {
       const url = safeUrl(wish.url);
       const voted = (store.mode === 'demo' || store.supportsWebsiteEntry) && store.hasVoted(wish.id);
       const unavailable = store.mode === 'google' && !store.supportsWebsiteEntry && (!store.voteForm?.url || !store.voteForm?.voterNameEntryId);
-      return `<article class="panel wish-card" data-wish-id="${h(wish.id)}"><div class="wish-top"><div class="wish-type"><span class="wish-icon" aria-hidden="true">♡</span><span class="category-label">${kindLabel}</span></div><span class="pill ${style}">${label}</span></div><h2>${h(wish.name)}</h2><p>${h(wish.note || '一個值得試試的新選擇。')}</p>${url ? `<a href="${h(url)}" target="_blank" rel="noopener noreferrer" class="text-link">看看這款${kindLabel} ↗</a>` : '<span class="subtle">尚未附上購買連結</span>'}<div class="wish-vote-row"><button class="wish-vote-button${voted ? ' is-voted' : ''}" data-action="vote-wish" data-id="${h(wish.id)}" aria-pressed="${voted}"${voted || unavailable ? ' disabled' : ''}${unavailable ? ' title="請先更新 Google 贊同表單，加入必填姓名欄位"' : ''}>${voted ? '♥ 已贊同' : '♡ 我也喜歡'}</button>${renderWishSupportCount(wish)}</div><div class="wish-bottom"><span class="wish-date">${formatDate(wish.createdAt)} 加入許願池</span>${store.canEdit ? `<button class="cell-action" data-action="edit-wish" data-id="${h(wish.id)}">管理願望 ↗</button>` : ''}</div></article>`;
+      return `<article class="panel wish-card" data-wish-id="${h(wish.id)}"><div class="wish-top"><div class="wish-type"><span class="wish-icon" aria-hidden="true">♡</span><span class="category-label">${kindLabel}</span></div><span class="pill ${style}">${label}</span></div><h2>${h(wish.name)}</h2><p>${h(wish.note || '一個值得試試的新選擇。')}</p>${url ? `<a href="${h(url)}" target="_blank" rel="noopener noreferrer" class="text-link">看看這款${kindLabel} ↗</a>` : '<span class="subtle">尚未附上購買連結</span>'}<div class="wish-vote-row"><button class="wish-vote-button${voted ? ' is-voted' : ''}" data-action="vote-wish" data-id="${h(wish.id)}" aria-pressed="${voted}"${voted || unavailable ? ' disabled' : ''}${unavailable ? ' title="請先更新 Google 贊同表單，加入必填姓名欄位"' : ''}>${voted ? '♥ 已贊同' : '♡ 我也喜歡'}</button>${renderWishSupportCount(wish)}</div><div class="wish-bottom"><span class="wish-date">${formatDate(wish.createdAt)} 加入許願池</span>${managing && store.canEdit ? `<button class="cell-action" data-action="edit-wish" data-id="${h(wish.id)}">管理願望 ↗</button>` : ''}</div>${managing ? renderWishPurchaseControl(wish) : ''}</article>`;
     }).join('')}</div>` : `<div class="panel">${managing || allWishes.length ? empty('目前沒有符合的願望', '') : empty('第一個採買願望，會是什麼？', '選擇飲料或零食，附上想買的品項與連結。', button('♡ 新增願望', 'new-wish'))}</div>`);
   if (!managing) bindPurchasedWishes(purchased);
+}
+
+function renderWishPurchaseControl(wish) {
+  const purchased = wish.status === 'purchased';
+  const enabled = store.supportsWishPurchases;
+  const product = wish.purchasedProduct;
+  return `<div class="wish-purchase-control">
+    <label><input type="checkbox" data-wish-purchase="${h(wish.id)}"${purchased ? ' checked' : ''}${enabled ? '' : ' disabled'}> 已購買</label>
+    ${product ? `<span class="subtle">${h(supplyLabel(product))}</span>` : ''}
+    ${purchased && enabled ? button(product ? '更換倉庫品項' : '連結倉庫品項', 'link-wish-product', `type="button" data-id="${h(wish.id)}"`, 'button-small button-outline') : ''}
+  </div>`;
 }
 
 function renderHistory() {
@@ -1056,6 +1071,60 @@ function openLogin() {
   showModal('歡迎回到茶水間', '使用獲授權的管理者帳號登入。帳號由公司管理者建立，不開放自行註冊。', `<form id="login-form"><div class="form-grid"><label class="field full-width">電子郵件<input type="email" name="email" required autocomplete="username" maxlength="254"></label><label class="field full-width">密碼<input type="password" name="password" required autocomplete="current-password"></label></div><div class="form-actions"><button class="button" type="submit">登入編輯</button></div></form>`);
 }
 
+const wishProductKey = product => `${product.kind}:${product.id}`;
+const wishProductKindLabel = kind => SUPPLY_KINDS[kind] || '飲料';
+const normalizeWishProductSearch = text => text.normalize('NFKC').toLocaleLowerCase('zh-TW');
+
+function selectedWishProduct(form) {
+  return form.wishProducts.find(product => wishProductKey(product) === form.elements.product.value);
+}
+
+function showWishProductPreview(form) {
+  const preview = form.querySelector('[data-wish-product-preview]');
+  const product = selectedWishProduct(form);
+  preview.hidden = !product;
+  preview.innerHTML = product ? `${purchasedWishArt({ purchasedProduct: product })}<span>${h(supplyLabel(product))}</span>` : '';
+  if (product) hydratePurchasedWishArt(preview, { purchasedProduct: product }, 'wish-purchase-preview-outline');
+}
+
+function filterWishProducts(form, selected) {
+  const search = normalizeWishProductSearch(form.elements.search.value).trim().split(/\s+/).filter(Boolean);
+  const products = form.wishProducts.filter(product => {
+    const label = normalizeWishProductSearch(`${supplyLabel(product)} ${product.category || ''} ${wishProductKindLabel(product.kind)}`);
+    return search.every(term => label.includes(term));
+  });
+  const select = form.elements.product;
+  const previous = selected || select.value;
+  select.innerHTML = `<option value="">${products.length ? '請選擇倉庫品項' : '找不到符合的品項'}</option>${WISH_PRODUCT_KINDS.map(kind => {
+    const group = products.filter(product => product.kind === kind);
+    return group.length ? `<optgroup label="${h(wishProductKindLabel(kind))}">${group.map(product => `<option value="${h(wishProductKey(product))}">${h(supplyLabel(product))}${product.active === false ? '（歷史）' : ''}</option>`).join('')}</optgroup>` : '';
+  }).join('')}`;
+  select.value = products.some(product => wishProductKey(product) === previous) ? previous : '';
+  form.querySelector('[data-wish-product-count]').textContent = `${products.length} 個品項`;
+  showWishProductPreview(form);
+}
+
+function openWishPurchase(id, purchased) {
+  if (view !== 'manage-wishes' || !store.supportsWishPurchases) return;
+  const wish = store.data.wishes.find(item => item.id === id);
+  if (!wish) throw new Error('找不到這筆願望，請重新整理。');
+  const title = purchased ? (wish.status === 'purchased' ? '連結倉庫品項' : '確認已購買') : '取消已購買標記';
+  const description = purchased ? `選擇「${h(wish.name)}」實際買到的品項，許願池會用選定商品的圖片。` : `取消後，「${h(wish.name)}」會從願望成真輪播移除。`;
+  const picker = purchased ? `<div class="form-grid">
+    <label class="field full-width">搜尋倉庫品項<input type="search" name="search" maxlength="100" placeholder="輸入品牌、品名或口味" autocomplete="off"></label>
+    <label class="field full-width">對應商品<select name="product" required></select><small data-wish-product-count role="status"></small></label>
+  </div><div class="wish-purchase-preview" data-wish-product-preview hidden></div>` : '';
+  showModal(title, description, `<form id="wish-purchase-form">${picker}<label class="field">登記人<input name="recorder" required maxlength="80" autocomplete="name"></label><div class="form-actions">${button('取消', 'close-modal', 'type="button"', 'button-outline')}<button class="button" type="submit">${purchased ? '確認已購買' : '確認取消'}</button></div></form>`);
+  const form = $('#wish-purchase-form');
+  form.wishPurchase = { wishId: wish.id, purchased, expectedStatus: wish.status, expectedPurchaseAt: wish.purchaseUpdatedAt || '' };
+  if (purchased) {
+    form.wishProducts = wishWarehouseProducts(store.data.drinks, supplyItems()).sort((a, b) => supplyLabel(a).localeCompare(supplyLabel(b), 'zh-TW'));
+    filterWishProducts(form, wish.purchasedProduct && wishProductKey(wish.purchasedProduct));
+    form.elements.search.addEventListener('input', () => filterWishProducts(form));
+    form.elements.product.addEventListener('change', () => showWishProductPreview(form));
+  }
+}
+
 function openQuickDrink() {
   if (!adminViews.has(view) || (!store.canManage && !store.canEdit)) throw new Error('請從管理入口新增飲料。');
   if (store.mode === 'google' && !store.supportsWebsiteEntry) {
@@ -1126,6 +1195,18 @@ function confirmDrinkArrivals(entries, detail = '') {
 
 async function submitForm(form) {
   const values = new FormData(form);
+  if (form.id === 'wish-purchase-form') {
+    const intent = form.wishPurchase;
+    const product = intent.purchased ? selectedWishProduct(form) : null;
+    if (intent.purchased && !product) throw new Error('請選擇對應的倉庫品項。');
+    const recorder = wishVoterName(values.get('recorder'));
+    await store.updateWishPurchase({ ...intent, recorder, ...(product ? { productId: product.id, productKind: product.kind } : {}) });
+    modalDirty = false;
+    modal.close();
+    render();
+    googleWriteToast(intent.purchased ? '已更新「願望成真」的商品。' : '已取消已購買標記。');
+    return;
+  }
   if (['coffee-receipt-form','coffee-stocktake-form'].includes(form.id)) {
     const data={brand:values.get('brand'),poundsPerBag:coffeePounds(values.get('weight')),bags:Number(values.get('bags')),recorder:values.get('recorder')};
     if(form.id==='coffee-stocktake-form')await store.submitCoffeeStocktake(data);else await store.submitCoffeeReceipt(data);
@@ -1451,6 +1532,7 @@ async function runAction(action, id) {
     renderWishes();
     return;
   }
+  if (action === 'link-wish-product') { openWishPurchase(id, true); return; }
   if (action === 'vote-wish') { openVote(id); return; }
   if (action === 'view-wish-supporters') { openWishSupporters(id); return; }
   if (action === 'view-drink-label') { openDrinkLabel(id); return; }
@@ -1616,6 +1698,13 @@ document.addEventListener('input', (event) => {
   if (supplyForm) updateSupplyArrivalSummary(supplyForm);
 });
 document.addEventListener('change', (event) => {
+  const purchase = event.target.closest('[data-wish-purchase]');
+  if (purchase) {
+    const purchased = purchase.checked;
+    purchase.checked = !purchased;
+    if (!busy) openWishPurchase(purchase.dataset.wishPurchase, purchased);
+    return;
+  }
   if(event.target.id==='count-category-filter'){countFilters[countKind].category=event.target.value;updateCountFilters();return;}
   if(event.target.id==='count-product-filter'){countFilters[countKind].product=event.target.value;updateCountFilters();return;}
   inputSequence += 1;

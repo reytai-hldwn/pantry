@@ -296,6 +296,8 @@ var INITIAL_CATALOG = /* GENERATED_CATALOG_START */ [
   }
 ] /* GENERATED_CATALOG_END */;
 var SHEETS = { coffee: 'CoffeeReceipts', catalog: 'Catalog', warehouse: 'Warehouse', archive: 'Archive', history: 'History', wishes: 'WishReview', votes: 'WishVotes', products: 'ProductIntake', setup: 'Setup', website: 'WebsiteRequests', supplyCatalog: 'SupplyCatalog', supplyHistory: 'SupplyHistory', supplyWarehouse: 'SupplyWarehouse', restockPreferences: 'RestockPreferences', recorderCorrections:'HistoryRecorderCorrections' };
+var WISH_PURCHASE_HEADER = '願望採購連結';
+var WISH_PURCHASE_KINDS = ['drink', 'snack', 'noodle', 'frozen'];
 var RESTOCK_PREFERENCE_HEADERS = ['事件 ID','Google 收件時間','分類','品項 ID','補貨狀態','操作來源','採計狀態','登記人'];
 var FROZEN_UNITS = ['支','杯','盒','包','個','桶'];
 function supplyUnits_(kind) { return kind==='frozen'?FROZEN_UNITS:kind==='snack'?SNACK_UNITS:kind==='noodle'?['杯','碗']:kind==='toner'?['盒']:[]; }
@@ -601,7 +603,7 @@ function submitWebsiteRequest_(request) {
       return websiteReceipt_(request.requestId);
     }
     if(effects.history || (effects.batch&&effects.batch.some(function(child){return !!child.history;})))PropertiesService.getScriptProperties().setProperty('HOLDWIN_ZERO_DRINK_IDS','');
-    if (['wish','vote','archive-wish'].indexOf(effects.operation) >= 0) {
+    if (['wish','vote','archive-wish','wish-purchase'].indexOf(effects.operation) >= 0) {
       PropertiesService.getScriptProperties().setProperty('HOLDWIN_PUBLIC_UPDATED_AT', new Date().toISOString());
     } else if (effects.zeroStockDecision) {
       if (effects.zeroStockDecision.kind === 'drink') {
@@ -725,7 +727,7 @@ function prepareWebsiteRequest_(ss, request, stamp, context) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) throw websiteInputError_('送出資料格式不正確。');
   var operation = request.operation, effects = { operation: operation, result: { operation: operation } };
   if(restockProtectedOperation_(operation)){effects.result.recorder=validateRestockAuth_(data);effects.result.restockAuthVersion=2;}
-  var catalog = ['coffee-stocktake','coffee-receipt','wish', 'vote','batch-arrival','snack-catalog-batch'].indexOf(operation) >= 0 || String(operation).indexOf('supply-') === 0 || (operation==='restock-preference'&&data.kind!=='drink') ? [] : catalog_(ss);
+  var catalog = ['coffee-stocktake','coffee-receipt','wish','vote','wish-purchase','batch-arrival','snack-catalog-batch'].indexOf(operation) >= 0 || String(operation).indexOf('supply-') === 0 || (operation==='restock-preference'&&data.kind!=='drink') ? [] : catalog_(ss);
   function activeDrink(id,restore) {
     var found = catalog.filter(function(drink){return drink.id===id&&(drink.active||restore===true);})[0];
     if (!found) throw websiteInputError_('這個品項目前不在供應清單，請重新讀取品項。');
@@ -932,6 +934,8 @@ function prepareWebsiteRequest_(ss, request, stamp, context) {
     if (!existing) effects.wish = [wishId,sheetText_(drink.name),'','我還想喝，希望有機會可以再買','pending',stamp,'drink',drink.id];
     effects.vote = ['website:' + request.requestId,wishId,sheetText_(data.voterId),stamp,'採計',sheetText_(voterName)];
     effects.result.id = wishId;
+  } else if (operation === 'wish-purchase') {
+    effects.wishPurchase = prepareWishPurchase_(ss, data, stamp);
   } else if (operation === 'wish') {
     if (['drink', 'snack'].indexOf(data.kind) < 0) throw websiteInputError_('請選擇飲料許願或零食許願。');
     var name = websiteText_(data.name, '品項名稱', 80, true);
@@ -1022,6 +1026,15 @@ function websiteAppendMissing_(sheet, rows) {
 }
 
 function applyWebsiteRequest_(ss, effects, context) {
+  if (effects.wishPurchase) {
+    var wish = applyWishPurchase_(ss, effects.wishPurchase);
+    var summary = voteSummary_(ss);
+    wish.votes = summary.counts[wish.id] || 0;
+    wish.supporters = summary.names[wish.id] || [];
+    effects.result.wish = wish;
+    effects.result.snapshotAt = new Date().toISOString();
+    return;
+  }
   if(effects.operation==='restock-preference'){
     // Reuse only this locked request's validated state. Recoveries always read anew.
     var state=context&&context.restockState||restockPreferenceState_(ss);
@@ -1150,12 +1163,96 @@ function applyWebsiteRequest_(ss, effects, context) {
   }
 }
 
+function wishStatus_(value) {
+  return ['pending', 'purchased', 'declined'].indexOf(value) >= 0 ? value : 'pending';
+}
+
+function wishPurchaseMetadata_(raw) {
+  if (!raw) return null;
+  try {
+    var value = JSON.parse(raw);
+    if (value && iso_(value.updatedAt) === value.updatedAt &&
+        (!value.product || (WISH_PURCHASE_KINDS.indexOf(value.product.kind) >= 0 && value.product.id && value.product.name))) return value;
+  } catch (ignored) { /* Existing manually edited rows remain readable. */ }
+  return null;
+}
+
+function wishFromRow_(row) {
+  var wish = { id: String(row[0]), name: text_(row[1], 80), url: safeUrl_(row[2]), note: text_(row[3], 500), status: wishStatus_(row[4]), createdAt: iso_(row[5]), kind: wishKind_(row[6]) };
+  if (row[7]) wish.sourceDrinkId = text_(row[7], 160);
+  var purchase = wishPurchaseMetadata_(row[8]);
+  if (purchase) {
+    wish.purchaseUpdatedAt = purchase.updatedAt;
+    if (wish.status === 'purchased' && purchase.product) {
+      var item = purchase.product;
+      wish.purchasedProduct = { id: text_(item.id, 160), kind: item.kind, name: text_(item.name, 80), flavor: text_(item.flavor, 80) };
+    }
+  }
+  return wish;
+}
+
 function wishRows_(ss) {
   var sheet = ss.getSheetByName(SHEETS.wishes);
   if (!sheet || sheet.getLastRow() < 2) return [];
-  return sheet.getRange(2, 1, sheet.getLastRow() - 1, 8).getValues().map(function (row) {
-    return { id: String(row[0]), name: text_(row[1], 80), url: safeUrl_(row[2]), note: text_(row[3], 500), status: ['pending', 'purchased', 'declined'].indexOf(row[4]) >= 0 ? row[4] : 'pending', createdAt: iso_(row[5]), kind: wishKind_(row[6]), ...(row[7] ? {sourceDrinkId:text_(row[7],160)} : {}) };
-  }).filter(function (wish) { return wish.id && wish.name && wish.createdAt && wish.kind; });
+  var rows = sheet.getRange(1, 1, sheet.getLastRow(), 9).getValues();
+  var hasPurchaseColumn = rows.shift()[8] === WISH_PURCHASE_HEADER;
+  return rows.map(function (row) { return wishFromRow_(hasPurchaseColumn ? row : row.slice(0, 8)); })
+    .filter(function (wish) { return wish.id && wish.name && wish.createdAt && wish.kind; });
+}
+
+function wishPurchaseTarget_(ss, id) {
+  var sheet = ss.getSheetByName(SHEETS.wishes);
+  if (!sheet || sheet.getLastRow() < 2) throw websiteInputError_('找不到這筆願望，請重新整理。');
+  var rows = sheet.getRange(1, 1, sheet.getLastRow(), 9).getValues();
+  var header = rows.shift()[8];
+  if (header !== WISH_PURCHASE_HEADER && (header || rows.some(function (row) { return row[8] !== ''; }))) {
+    throw websiteInputError_('願望採購欄已有其他資料，請由管理者確認。');
+  }
+  var index = rows.findIndex(function (row) { return String(row[0]) === id; });
+  if (index < 0) throw websiteInputError_('找不到這筆願望，請重新整理。');
+  var row = rows[index], purchase = wishPurchaseMetadata_(row[8]);
+  if (row[8] && !purchase) throw websiteInputError_('這筆採購資料格式已變動，請由管理者確認。');
+  return { sheet: sheet, index: index + 2, row: row, header: header, purchase: purchase };
+}
+
+function prepareWishPurchase_(ss, data, stamp) {
+  var id = websiteText_(data.wishId, '願望代號', 160, true);
+  var recorder = websiteText_(data.recorder, '登記人', 80, true);
+  if (typeof data.purchased !== 'boolean') throw websiteInputError_('請確認是否已購買。');
+  var target = wishPurchaseTarget_(ss, id), previous = target.purchase;
+  var status = wishStatus_(target.row[4]), lastUpdate = previous ? previous.updatedAt : '';
+  if (data.expectedStatus !== status || data.expectedPurchaseAt !== lastUpdate) {
+    throw websiteInputError_('這筆願望已更新，請重新整理後再確認。');
+  }
+  if (!data.purchased && status !== 'purchased') throw websiteInputError_('這筆願望目前未標記已購買。');
+  var product = null;
+  if (data.purchased) {
+    var kind = data.productKind, productId = websiteText_(data.productId, '倉庫品項', 160, true);
+    if (WISH_PURCHASE_KINDS.indexOf(kind) < 0) throw websiteInputError_('請選擇倉庫中的飲料、零食、泡麵或冰品。');
+    var items = kind === 'drink' ? catalog_(ss) : supplyCatalog_(ss).filter(function (item) { return item.kind === kind; });
+    var item = items.find(function (entry) { return entry.id === productId; });
+    if (!item) throw websiteInputError_('找不到這個倉庫品項，請重新整理。');
+    product = { id: item.id, kind: kind, name: item.name, flavor: item.flavor || '' };
+  }
+  var previousStatus = status === 'purchased' ? (previous && previous.previousStatus === 'declined' ? 'declined' : 'pending') : status;
+  var nextTime = new Date(Math.max(Date.parse(stamp), (Date.parse(lastUpdate) || 0) + 1)).toISOString();
+  return { id: id, beforeStatus: target.row[4], beforePurchase: target.row[8],
+    status: data.purchased ? 'purchased' : previousStatus,
+    metadata: JSON.stringify({ updatedAt: nextTime, previousStatus: previousStatus, product: product, recorder: recorder }) };
+}
+
+function applyWishPurchase_(ss, change) {
+  var target = wishPurchaseTarget_(ss, change.id), row = target.row;
+  if (row[4] === change.status && row[8] === change.metadata) return wishFromRow_(row);
+  if (row[4] !== change.beforeStatus || row[8] !== change.beforePurchase) {
+    throw websiteInputError_('這筆願望已有較新的更新，請重新整理後再確認。');
+  }
+  if (!target.header) target.sheet.getRange(1, 9).setValues([[WISH_PURCHASE_HEADER]]);
+  row[4] = change.status;
+  row[8] = change.metadata;
+  // Commit the purchase status and selected product in the same row update.
+  target.sheet.getRange(target.index, 5, 1, 5).setValues([row.slice(4, 9)]);
+  return wishFromRow_(row);
 }
 
 function wishKind_(value) {
@@ -1202,7 +1299,7 @@ function publicData_(spreadsheet, catalog) {
   });
   var fields = JSON.parse(props.getProperty('HOLDWIN_FORM_FIELDS') || '{}');
   var formUrls = websiteFormUrls_();
-  return { ok: true, provider: 'google', websiteEntry: { version: 1, restockAuthVersion: 2, newArrivalVersion: 1, drinkCategoryVersion: 1, batchArrivalVersion: 1, archivedArrivalVersion: 1, wishReceiptVersion: 1, fastReceiptVersion: 1, drinkNameVersion: 1, popularityVersion: 3, archiveWishVersion: 1, zeroStockVersion: 1, gachaVersion: 1, autoArchiveVersion: 1 }, snapshotAt: snapshotAt, drinks: drinks, wishes: wishes, formUrls: formUrls,
+  return { ok: true, provider: 'google', websiteEntry: { version: 1, restockAuthVersion: 2, newArrivalVersion: 1, drinkCategoryVersion: 1, batchArrivalVersion: 1, archivedArrivalVersion: 1, wishReceiptVersion: 1, wishPurchaseVersion: 1, fastReceiptVersion: 1, drinkNameVersion: 1, popularityVersion: 3, archiveWishVersion: 1, zeroStockVersion: 1, gachaVersion: 1, autoArchiveVersion: 1 }, snapshotAt: snapshotAt, drinks: drinks, wishes: wishes, formUrls: formUrls,
     wishForm: fields.wishKindEntry ? { url: formUrls.wish, kindEntryId: fields.wishKindEntry } : null,
     voteForm: { url: formUrls.vote, wishEntryId: fields.voteWishEntry || '', voterEntryId: fields.voteVoterEntry || '', voterNameEntryId: fields.voteNameEntry || '' },
     adminUrl: ss.getUrl() + '#gid=' + ss.getSheetByName(SHEETS.warehouse).getSheetId(),

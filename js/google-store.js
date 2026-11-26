@@ -6,7 +6,7 @@ import { submitGoogleWebsiteCommand } from './google-write.js';
 import { normalizeSupplyWarehouse, canonicalSupplyUnit, canonicalSnackCategory, isCornStick, CORN_STICK_REQUEST_PREFIX, SNACK_CATEGORIES, SNACK_UNITS, supplyUnits, supplyNeedsExpiry, validSupplyExpiry } from './supplies.js';
 import { isLowStockItem, isOutOfStockItem, inventoryLowThreshold, matchesInventoryStockFilter, normalizeRestockPreferences, restockThreshold } from './restock-preferences.js';
 import { inventoryActivity, inventoryTotals, normalizeInventoryTotals } from './inventory-activity.js';
-import { archivedFoodWishId, wishVoterName } from './wish-support.js';
+import { archivedFoodWishId, wishVoterName, WISH_PRODUCT_KINDS } from './wish-support.js';
 
 let googleCallbackSequence = 0;
 
@@ -166,6 +166,8 @@ function normalizeGoogleWish(row) {
   const votes = row.votes === undefined ? 0 : googleQuantityField(row.votes, '贊同人數');
   const supporters = row.supporters === undefined ? [] : row.supporters;
   if (!Array.isArray(supporters) || supporters.length > 5000 || supporters.length > votes) throw new Error('Google 贊同名單格式不正確。');
+  const product = row.status === 'purchased' ? row.purchasedProduct : null;
+  if (product && !WISH_PRODUCT_KINDS.includes(product.kind)) throw new Error('Google 願望採購品項格式不正確。');
   return {
     id,
     kind,
@@ -178,6 +180,11 @@ function normalizeGoogleWish(row) {
     votes,
     supporters: supporters.map((name) => textField(name, '贊同姓名', 80)),
     ...(row.sourceDrinkId ? {sourceDrinkId:textField(row.sourceDrinkId,'歷史品項代號',160)} : {}),
+    ...(row.purchaseUpdatedAt ? { purchaseUpdatedAt: googleDateField(row.purchaseUpdatedAt, '採購更新時間') } : {}),
+    ...(product ? { purchasedProduct: {
+      id: textField(product.id, '採購品項代號', 160), kind: product.kind,
+      name: textField(product.name, '採購品名', 80), flavor: textField(product.flavor ?? '', '採購口味', 80, false),
+    } } : {}),
   };
 }
 
@@ -272,6 +279,7 @@ export function normalizeGooglePublicData(payload, { warehouse = false } = {}) {
     updatedAt,
     snapshotAt: googleDateField(payload.snapshotAt, '資料讀取時間', true),
     archiveWishVersion: payload.websiteEntry?.archiveWishVersion === 1 ? 1 : 0,
+    wishPurchaseVersion: payload.websiteEntry?.wishPurchaseVersion === 1 ? 1 : 0,
     gachaVersion: payload.websiteEntry?.gachaVersion === 1 ? 1 : 0,
     popularityVersion: [1,2,3].includes(payload.websiteEntry?.popularityVersion) ? payload.websiteEntry.popularityVersion : 0,
     websiteEntryVersion: payload.websiteEntry?.version === 1 ? 1 : 0,
@@ -407,6 +415,7 @@ export class GoogleInventoryStore {
   get supportsArchivedRestock() { return this.supportsManualRestock&&this.archivedRestockVersion===1; }
   get supportsWebsiteEntry() { return this.websiteEntryVersion === 1; }
   get supportsArchiveWishes() { return this.supportsWebsiteEntry && this.archiveWishVersion === 1; }
+  get supportsWishPurchases() { return this.supportsWebsiteEntry && this.wishPurchaseVersion === 1; }
   get supportsDrinkArrivalCategories() { return this.supportsNewArrivals && this.drinkCategoryVersion === 1; }
   get supportsNewArrivals() { return this.supportsWebsiteEntry && this.newArrivalVersion === 1; }
   get supportsSupplies() { return this.supportsWebsiteEntry && this.supplyEntryVersion === 1; }
@@ -474,7 +483,7 @@ export class GoogleInventoryStore {
     const result = normalizeGooglePublicData({ok:true,drinks:this.data.drinks,wishes:this.data.wishes,
       formUrls:this.formUrls,voteForm:this.voteForm,wishForm:this.wishForm,adminUrl:this.adminUrl,
       updatedAt:this.updatedAt,snapshotAt:this.snapshotAt,
-      websiteEntry:{version:this.websiteEntryVersion,popularityVersion:this.popularityVersion,archiveWishVersion:this.archiveWishVersion,gachaVersion:this.gachaVersion,fastReceiptVersion:this.fastReceiptVersion,restockAuthVersion:this.restockAuthVersion}});
+      websiteEntry:{version:this.websiteEntryVersion,popularityVersion:this.popularityVersion,archiveWishVersion:this.archiveWishVersion,wishPurchaseVersion:this.wishPurchaseVersion,gachaVersion:this.gachaVersion,fastReceiptVersion:this.fastReceiptVersion,restockAuthVersion:this.restockAuthVersion}});
     ++this.googleReadSequence;
     this.pendingGoogleReads.delete('public');
     this.applyGoogleView(result, false);
@@ -516,7 +525,7 @@ export class GoogleInventoryStore {
       try {
         const payload = { ok: true, provider: 'google', drinks: result.data.drinks, wishes: result.data.wishes,
           formUrls: result.formUrls, voteForm: result.voteForm, wishForm: result.wishForm,
-          adminUrl: result.adminUrl, updatedAt: result.updatedAt, snapshotAt: result.snapshotAt, websiteEntry: { version: result.websiteEntryVersion, popularityVersion: result.popularityVersion, archiveWishVersion:result.archiveWishVersion,gachaVersion:result.gachaVersion,fastReceiptVersion:result.fastReceiptVersion,restockAuthVersion:result.restockAuthVersion } };
+          adminUrl: result.adminUrl, updatedAt: result.updatedAt, snapshotAt: result.snapshotAt, websiteEntry: { version: result.websiteEntryVersion, popularityVersion: result.popularityVersion, archiveWishVersion:result.archiveWishVersion,wishPurchaseVersion:result.wishPurchaseVersion,gachaVersion:result.gachaVersion,fastReceiptVersion:result.fastReceiptVersion,restockAuthVersion:result.restockAuthVersion } };
         const saved = JSON.stringify({ version: 1, savedAt: this.now(), payload });
         if (saved.length < 750000) (this.publicStorage || globalThis.localStorage)?.setItem(`holdwin-public-cache-v1:${endpoint}`, saved);
       } catch { /* Storage is optional; fresh Google data still works. */ }
@@ -547,6 +556,7 @@ export class GoogleInventoryStore {
     this.snapshotAt = result.snapshotAt;
     this.popularityVersion = result.popularityVersion;
     this.archiveWishVersion = result.archiveWishVersion;
+    this.wishPurchaseVersion = result.wishPurchaseVersion;
     this.gachaVersion = result.gachaVersion || 0;
     this.websiteEntryVersion = result.websiteEntryVersion;
     this.fastReceiptVersion = result.fastReceiptVersion || 0;
@@ -568,7 +578,7 @@ export class GoogleInventoryStore {
     this.supplyExpirySetVersion = result.supplyExpirySetVersion || 0;
     this.restockPreferences = result.restockPreferences || [];
     this.restockPreferenceVersion = result.restockPreferenceVersion || 0;
-    this.revision = JSON.stringify({ data: result.data, formUrls: result.formUrls, voteForm: result.voteForm, wishForm: result.wishForm, adminUrl: result.adminUrl, websiteEntryVersion: result.websiteEntryVersion, gachaVersion:this.gachaVersion, newArrivalVersion:this.newArrivalVersion,drinkCategoryVersion:this.drinkCategoryVersion,batchArrivalVersion:this.batchArrivalVersion,archivedArrivalVersion:this.archivedArrivalVersion,snackFlavorVersion:this.snackFlavorVersion,manualAllVersion:this.manualAllVersion,archivedRestockVersion:this.archivedRestockVersion, supplies:this.supplies,supplyEvents:this.supplyEvents,supplyEntryVersion:this.supplyEntryVersion,supplySnackVersion:this.supplySnackVersion,supplyFrozenVersion:this.supplyFrozenVersion,supplySnackPolicyVersion:this.supplySnackPolicyVersion,snackManualVersion:this.snackManualVersion,supplyExpiryVersion:this.supplyExpiryVersion,supplyExpirySetVersion:this.supplyExpirySetVersion,restockPreferences:this.restockPreferences,restockPreferenceVersion:this.restockPreferenceVersion, coffeeReceipts:this.coffeeReceipts, coffeeEntryVersion:this.coffeeEntryVersion });
+    this.revision = JSON.stringify({ data: result.data, formUrls: result.formUrls, voteForm: result.voteForm, wishForm: result.wishForm, adminUrl: result.adminUrl, websiteEntryVersion: result.websiteEntryVersion, wishPurchaseVersion: result.wishPurchaseVersion, gachaVersion:this.gachaVersion, newArrivalVersion:this.newArrivalVersion,drinkCategoryVersion:this.drinkCategoryVersion,batchArrivalVersion:this.batchArrivalVersion,archivedArrivalVersion:this.archivedArrivalVersion,snackFlavorVersion:this.snackFlavorVersion,manualAllVersion:this.manualAllVersion,archivedRestockVersion:this.archivedRestockVersion, supplies:this.supplies,supplyEvents:this.supplyEvents,supplyEntryVersion:this.supplyEntryVersion,supplySnackVersion:this.supplySnackVersion,supplyFrozenVersion:this.supplyFrozenVersion,supplySnackPolicyVersion:this.supplySnackPolicyVersion,snackManualVersion:this.snackManualVersion,supplyExpiryVersion:this.supplyExpiryVersion,supplyExpirySetVersion:this.supplyExpirySetVersion,restockPreferences:this.restockPreferences,restockPreferenceVersion:this.restockPreferenceVersion, coffeeReceipts:this.coffeeReceipts, coffeeEntryVersion:this.coffeeEntryVersion });
   }
 
   get supportsCoffee() { return this.supportsWebsiteEntry && this.coffeeEntryVersion === 2; }
@@ -584,12 +594,14 @@ export class GoogleInventoryStore {
   }
 
   applyWishReceipt(operation, data, result, requestId) {
-    if (!['wish', 'vote', 'archive-wish'].includes(operation) || result?.operation !== operation ||
+    if (!['wish', 'vote', 'archive-wish', 'wish-purchase'].includes(operation) || result?.operation !== operation ||
         typeof result.snapshotAt !== 'string' || !Number.isFinite(Date.parse(result.snapshotAt))) return false;
     try {
       const wish = normalizeGoogleWish(result.wish);
       const expectedId = operation === 'wish' ? `wish-web-${requestId}` : operation === 'archive-wish' ? result.id : data.wishId;
       if (operation === 'archive-wish' && wish.sourceDrinkId !== data.drinkId) return false;
+      if (operation === 'wish-purchase' && ((wish.status === 'purchased') !== data.purchased ||
+          (data.purchased && (wish.purchasedProduct?.id !== data.productId || wish.purchasedProduct?.kind !== data.productKind)))) return false;
       if (wish.id !== expectedId || (operation === 'wish' && result.id !== wish.id)) return false;
       const stamp = Date.parse(result.snapshotAt);
       const current = this.data.wishes.find(entry => entry.id === wish.id);
@@ -972,6 +984,11 @@ export class GoogleInventoryStore {
     // The existing Google vote receipt then records each name independently.
     await this.ensureWish(id, { kind: 'snack', name, note: '我還想要吃這個！' });
     return this.voteWish(id, voter);
+  }
+
+  async updateWishPurchase(data) {
+    if (!this.supportsWishPurchases) throw new Error('請更新原 Google Apps Script 部署後再登記已購買。');
+    return this.sendWebsiteCommand('wish-purchase', data);
   }
 
   async supportArchivedDrink(drinkId, voterName) {

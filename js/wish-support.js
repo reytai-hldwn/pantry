@@ -27,3 +27,9 @@ export function wishVoterName(value) {
   if (!name || name.length > 80) throw new Error('請填寫姓名，最多 80 字。');
   return name;
 }
+
+export const WISH_PRODUCT_KINDS = ['drink', 'snack', 'noodle', 'frozen'];
+
+export function wishWarehouseProducts(drinks, supplies) {
+  return [...drinks.map(drink => ({ ...drink, kind: 'drink' })), ...supplies.filter(item => WISH_PRODUCT_KINDS.includes(item.kind))];
+}

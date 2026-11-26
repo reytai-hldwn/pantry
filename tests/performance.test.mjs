@@ -81,6 +81,56 @@ test('confirmed wish/vote snapshots skip the extra full read and update cache wi
   assert.equal(v.reads(),1);assert.equal(v.store.data.wishes[0].votes,1);assert.equal(v.store.hasVoted(c.store.data.wishes[0].id),true);
 });
 
+test('wish purchase journals the selected warehouse ID and resumes after a committed row without replacing the vote or stock', () => {
+  const b = websiteBackend();
+  const wishId = b.send('wish', { ...wishData, name: '起司三角' }).result.id;
+  b.send('vote', { wishId, voterName: '讀者甲', voterId: 'wish-purchase-fixture-01' });
+  b.sheets.WishReview.rows[1][4] = 'declined';
+  const history = plain(b.sheets.History.rows);
+  const first = { wishId, purchased: true, productId: 'supply-snack-01', productKind: 'snack', expectedStatus: 'declined', expectedPurchaseAt: '', recorder: '登記甲' };
+  assert.equal(b.send('wish-purchase', { ...first, productKind: 'noodle' }).state, 'rejected');
+  assert.equal(b.send('wish-purchase', { ...first, recorder: '' }).state, 'rejected');
+  assert.equal(b.sheets.WishReview.rows[1][4], 'declined');
+  let flushes = 0;
+  b.ctx.SpreadsheetApp.flush = () => { if (++flushes === 2) throw new Error('write acknowledgement lost'); };
+  assert.throws(() => b.send('wish-purchase', first, requestId), /acknowledgement lost/);
+  const stored = b.sheets.WishReview.rows[1][8];
+  const purchased = b.send('wish-purchase', first, requestId).result.wish;
+  assert.equal(b.sheets.WishReview.rows[1][8], stored);
+  assert.equal(purchased.status, 'purchased');
+  assert.equal(purchased.name, '起司三角');
+  assert.equal(purchased.votes, 1);
+  assert.deepEqual(purchased.purchasedProduct, { id: 'supply-snack-01', kind: 'snack', name: '多力多滋', flavor: '超濃起司' });
+  assert.deepEqual(b.send('wish-purchase', first, requestId).result.wish, purchased);
+  assert.equal(b.send('wish-purchase', first).state, 'rejected', 'stale update is rejected');
+  assert.doesNotMatch(JSON.stringify(b.ctx.publicData_()), /登記甲/);
+  const next = { wishId, expectedStatus: 'purchased', expectedPurchaseAt: purchased.purchaseUpdatedAt, recorder: '登記乙' };
+  const relinked = b.send('wish-purchase', { ...next, purchased: true, productKind: 'drink', productId: 'tea' }).result.wish;
+  assert.equal(relinked.purchasedProduct.id, 'tea');
+  assert.notEqual(relinked.purchaseUpdatedAt, purchased.purchaseUpdatedAt);
+  const undone = b.send('wish-purchase', { ...next, purchased: false, expectedPurchaseAt: relinked.purchaseUpdatedAt }).result.wish;
+  assert.equal(undone.status, 'declined');
+  assert.equal(undone.purchasedProduct, undefined);
+  assert.equal(undone.votes, 1);
+  assert.deepEqual(plain(b.sheets.History.rows), history);
+  assert.equal(b.sheets.SupplyHistory, undefined);
+});
+
+test('a confirmed purchase receipt updates the next public view with the selected item', async () => {
+  const b = websiteBackend(), c = client(b);
+  const wishId = b.send('wish', { ...wishData, name: '下午那包' }).result.id;
+  await c.store.init();
+  await c.store.openWarehouse();
+  assert.equal(c.store.supportsWishPurchases, true);
+  await c.store.updateWishPurchase({ wishId, purchased: true, productId: 'supply-snack-01', productKind: 'snack', expectedStatus: 'pending', expectedPurchaseAt: '', recorder: '測試' });
+  assert.equal(c.reads(), 2);
+  await c.store.openPublic();
+  assert.equal(c.store.data.wishes[0].purchasedProduct.flavor, '超濃起司');
+  const fresh = client(b);
+  await fresh.store.init();
+  assert.equal(fresh.store.data.wishes[0].purchasedProduct.id, 'supply-snack-01');
+});
+
 test('named wishes resume the first vote after interruption without re-creating the proposal', async () => {
   const b = websiteBackend();
   let sequence = 0, interrupted = false;

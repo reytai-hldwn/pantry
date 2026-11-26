@@ -47,14 +47,18 @@ export function renderGachaSnackArt(snack) {
   return `<figure class="gacha-snack-illustration"><img src="${h(SNACK_DRAWER_CONTENTS)}" alt="" decoding="async"><figcaption>零食示意</figcaption></figure>`;
 }
 
-export function renderPurchasedSnackArt(wish) {
+export function renderPurchasedSnackArt(wish, outlineId) {
+  if (wish.purchasedProduct) {
+    const product = findDrawerProduct(wish.purchasedProduct);
+    return product?.photos.length ? snackProductArt(product, outlineId) : '';
+  }
   const nameKey = value => normalizeSnackSearch(value).replace(/[\s|｜]/g, '');
   const name = nameKey(wish.name);
   const matches = SNACK_DRAWER_PRODUCTS.filter(product =>
     archivedFoodWishId(product.key) === wish.id || nameKey(product.name) === name ||
     [product.flavors, ...product.details.map(detail => detail.flavor)].some(flavor => nameKey(product.name + flavor) === name));
   const product = matches.length === 1 ? matches[0] : null;
-  return product?.photos.length ? snackProductArt(product, `purchased-outline-${h(wish.id)}`) : '';
+  return product?.photos.length ? snackProductArt(product, outlineId) : '';
 }
 
 function snackProductCard(product) {

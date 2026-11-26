@@ -7,7 +7,7 @@ import { recordedBalances } from './inventory-activity.js';
 import { supplyNameKey, supplyLabel } from './supplies.js';
 import { RESTOCK_MODES, hasRecordedStock, isLowStockItem, restockPreferenceMode } from './restock-preferences.js';
 import { fulfilZeroRestocks } from './empty-stock.js';
-import { archivedFoodWishId, wishVoterName } from './wish-support.js';
+import { archivedFoodWishId, wishVoterName, wishWarehouseProducts } from './wish-support.js';
 
 const DATA_KEY = 'office-pantry-demo-v1';
 const SESSION_KEY = 'office-pantry-session-v1';
@@ -79,6 +79,7 @@ export class InventoryStore {
   async submitCoffeeStocktake(data) { return this.saveCoffeeEntry(data, true); }
   get canManage() { return this.mode === 'demo' || this.canEdit; }
   get supportsArchiveWishes() { return this.mode === 'demo'; }
+  get supportsWishPurchases() { return this.mode === 'demo'; }
   get supportsFrozen() { return this.mode === 'demo'; }
   get supportsSnacks() { return this.mode === 'demo'; }
   get supportsSnackNoExpiry() { return this.supportsSnacks; }
@@ -459,6 +460,32 @@ export class InventoryStore {
   async submitNamedWish(data, voterName) {
     if (this.mode !== 'demo') throw new Error('目前連線尚未啟用具名許願。');
     return this.submitWish(data, { voterName: wishVoterName(voterName) });
+  }
+
+  async updateWishPurchase({ wishId, purchased, productKind, productId, expectedStatus, expectedPurchaseAt, recorder }) {
+    if (!this.supportsWishPurchases) throw new Error('目前連線尚未啟用採購登記。');
+    wishVoterName(recorder);
+    const next = structuredClone(this.data);
+    const wish = next.wishes.find(item => item.id === wishId);
+    if (!wish || wish.status !== expectedStatus || (wish.purchaseUpdatedAt || '') !== expectedPurchaseAt) throw new Error('這筆願望已更新，請重新整理後再確認。');
+    if (purchased) {
+      const product = wishWarehouseProducts(this.data.drinks, this.supplies).find(item => item.kind === productKind && item.id === productId);
+      if (!product) throw new Error('請選擇倉庫品項。');
+      const { id, kind, name, flavor = '' } = product;
+      if (wish.status !== 'purchased') wish.purchasePreviousStatus = wish.status;
+      wish.status = 'purchased';
+      wish.purchasedProduct = { id, kind, name, flavor };
+    } else {
+      if (wish.status !== 'purchased') throw new Error('這筆願望目前未標記已購買。');
+      wish.status = wish.purchasePreviousStatus || 'pending';
+      delete wish.purchasedProduct;
+    }
+    wish.purchaseUpdatedAt = new Date(Math.max(Date.now(), (Date.parse(expectedPurchaseAt) || 0) + 1)).toISOString();
+    const saved = this.saveLocal(next);
+    this.data = saved.payload;
+    this.revision = saved.revision;
+    this.updatedAt = saved.updated_at;
+    return { wish };
   }
 
   async supportArchivedFood({ key, name }, voterName) {
