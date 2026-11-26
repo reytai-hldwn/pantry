@@ -3,6 +3,7 @@ import { buildConsumptionRecords, consumptionPeriod, selectConsumption } from '.
 import { SNACK_CATEGORIES, supplyLabel, supplyNameKey } from './supplies.js';
 import { SNACK_DRAWER_PRODUCTS } from './snack-drawer-catalog.js';
 import { renderPantryStockTabs } from './fridge.js';
+import { archivedFoodWishId } from './wish-support.js';
 
 export const SNACK_DRAWER_SCENE = './assets/snacks/tea-room-drawer.webp';
 export const SNACK_DRAWER_CONTENTS = './assets/snacks/tea-room-drawer-contents.webp';
@@ -44,6 +45,16 @@ export function renderGachaSnackArt(snack) {
   const product = findDrawerProduct(snack);
   if (product) return snackProductArt(product, `gacha-outline-${product.key}`);
   return `<figure class="gacha-snack-illustration"><img src="${h(SNACK_DRAWER_CONTENTS)}" alt="" decoding="async"><figcaption>零食示意</figcaption></figure>`;
+}
+
+export function renderPurchasedSnackArt(wish) {
+  const nameKey = value => normalizeSnackSearch(value).replace(/[\s|｜]/g, '');
+  const name = nameKey(wish.name);
+  const matches = SNACK_DRAWER_PRODUCTS.filter(product =>
+    archivedFoodWishId(product.key) === wish.id || nameKey(product.name) === name ||
+    [product.flavors, ...product.details.map(detail => detail.flavor)].some(flavor => nameKey(product.name + flavor) === name));
+  const product = matches.length === 1 ? matches[0] : null;
+  return product?.photos.length ? snackProductArt(product, `purchased-outline-${h(wish.id)}`) : '';
 }
 
 function snackProductCard(product) {
@@ -126,9 +137,7 @@ function openDrawerProduct(product, showDetails) {
     return `<section>${flavor ? `<h3>${h(flavor)}</h3>` : ''}${snackNutrition(nutrition)}${ingredientList}</section>`;
   }).join('');
   const photoNote = product.photoNote ? `<p class="subtle">${h(product.photoNote)}</p>` : '';
-  const referenceUrl = safeUrl(product.referenceUrl);
-  const reference = referenceUrl ? `<p><a href="${h(referenceUrl)}" target="_blank" rel="noopener noreferrer">商品官網 ↗</a></p>` : '';
-  showDetails(h(product.name), h(product.category), `<div class="snack-nutrition">${details}${photoNote}${reference}</div>`);
+  showDetails(h(product.name), h(product.category), `<div class="snack-nutrition">${details}${photoNote}</div>`);
 }
 
 function snackDrawerPath(context, points) {

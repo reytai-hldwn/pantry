@@ -160,6 +160,7 @@ function normalizeGoogleWish(row) {
   if (!['pending', 'purchased', 'declined'].includes(row.status)) throw new Error('Google 願望狀態格式不正確。');
   if (typeof row.createdAt !== 'string' || !Number.isFinite(Date.parse(row.createdAt))) throw new Error('Google 願望日期格式不正確。');
   const id = textField(row.id, '願望代號', 160);
+  const name = textField(row.name, '願望名稱', 80);
   const kind = row.kind === undefined ? 'drink' : row.kind;
   if (!['drink', 'snack'].includes(kind)) throw new Error('Google 願望分類格式不正確。');
   const votes = row.votes === undefined ? 0 : googleQuantityField(row.votes, '贊同人數');
@@ -168,7 +169,8 @@ function normalizeGoogleWish(row) {
   return {
     id,
     kind,
-    name: textField(row.name, '願望名稱', 80),
+    // Correct the display of this existing wish without re-creating its vote record.
+    name: id === 'wish-web-470f3d65-aa90-43ad-aa15-7d538b432e99' && name === 'Tatami蒟蒻' ? 'Tarami蒟蒻' : name,
     url,
     note: row.note === undefined ? '' : textField(row.note, '願望備註', 500, false),
     status: row.status,
