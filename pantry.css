@@ -631,18 +631,18 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
   color: #3a5844;
   font: 600 20px/1 system-ui, sans-serif;
 }
-.purchased-wishes-nav button:disabled { opacity: .4; cursor: default; }
 .purchased-wishes-list {
   display: flex;
   gap: 7px;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   overscroll-behavior-inline: contain;
-  scrollbar-width: thin;
+  scrollbar-width: none;
   padding: 2px 1px 4px;
   margin: 0;
   list-style: none;
 }
+.purchased-wishes-list::-webkit-scrollbar { display: none; }
 .purchased-wishes-list li { flex: 0 0 min(158px, 64vw); scroll-snap-align: start; min-width: 0; }
 .purchased-wishes-list :is(a, .purchased-wish-tile) {
   display: flex;

@@ -731,7 +731,7 @@ function renderPurchasedWishes(wishes) {
   if (!wishes.length) return '';
   return `<section class="purchased-wishes" aria-labelledby="purchased-wishes-title">
     <div class="purchased-wishes-heading"><h2 id="purchased-wishes-title">願望成真</h2><span>已購買</span>
-      <div class="purchased-wishes-nav" hidden><button type="button" data-wish-slide="-1" aria-label="上一批已購買品項" aria-controls="purchased-wishes-list">‹</button><button type="button" data-wish-autoplay aria-label="暫停自動輪播" aria-controls="purchased-wishes-list">Ⅱ</button><button type="button" data-wish-slide="1" aria-label="下一批已購買品項" aria-controls="purchased-wishes-list">›</button></div></div>
+      <div class="purchased-wishes-nav" hidden><button type="button" data-wish-slide="-1" aria-label="上一個已購買品項" aria-controls="purchased-wishes-list">‹</button><button type="button" data-wish-slide="1" aria-label="下一個已購買品項" aria-controls="purchased-wishes-list">›</button></div></div>
     <ul class="purchased-wishes-list" id="purchased-wishes-list" tabindex="0" aria-label="已購買的願望">${wishes.map(wish => {
     const url = safeUrl(wish.url);
     const productLabel = wish.purchasedProduct ? supplyLabel(wish.purchasedProduct) : '';
@@ -740,7 +740,6 @@ function renderPurchasedWishes(wishes) {
   }).join('')}</ul></section>`;
 }
 
-let purchasedWishAutoplay;
 let disposePurchasedWishCarousel;
 
 function bindPurchasedWishes(wishes) {
@@ -748,60 +747,48 @@ function bindPurchasedWishes(wishes) {
   if (!list) return;
   const section = list.parentElement;
   const nav = section.querySelector('.purchased-wishes-nav');
-  const [previous, toggle, next] = nav.querySelectorAll('button');
+  const [previous, next] = nav.querySelectorAll('button');
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const controller = new AbortController();
   const { signal } = controller;
   let timer;
-  let hovered = false;
   let dragging = false;
   let visible = false;
-  const motion = () => reducedMotion.matches ? 'instant' : 'smooth';
-  const isPlaying = () => purchasedWishAutoplay ?? !reducedMotion.matches;
 
-  function syncMode() {
-    const playing = isPlaying();
-    toggle.textContent = playing ? 'Ⅱ' : '▶';
-    toggle.setAttribute('aria-label', playing ? '暫停自動輪播' : '開始自動輪播');
-    sync();
+  function move(direction) {
+    const limit = list.scrollWidth - list.clientWidth;
+    if (limit < 2) return;
+    const step = list.children[1].offsetLeft - list.children[0].offsetLeft;
+    const wrap = direction > 0 ? list.scrollLeft >= limit - 2 : list.scrollLeft < 2;
+    const left = wrap ? (direction > 0 ? 0 : limit) : list.scrollLeft + direction * step;
+    list.scrollTo({ left, behavior: wrap || reducedMotion.matches ? 'instant' : 'smooth' });
   }
 
   function sync() {
-    clearTimeout(timer);
-    const limit = list.scrollWidth - list.clientWidth;
-    nav.hidden = limit < 2;
-    previous.disabled = list.scrollLeft < 2;
-    next.disabled = list.scrollLeft >= limit - 2;
-    const focus = document.activeElement;
-    if (nav.hidden || !isPlaying() || document.hidden || !visible || hovered || dragging || (focus !== toggle && section.contains(focus))) return;
-    timer = setTimeout(() => {
-      if (!list.isConnected) return;
-      const step = list.children[1].offsetLeft - list.children[0].offsetLeft;
-      if (next.disabled) list.scrollTo({ left: 0, behavior: 'instant' });
-      else list.scrollBy({ left: step, behavior: motion() });
-      sync();
-    }, 4000);
+    clearInterval(timer);
+    nav.hidden = list.scrollWidth - list.clientWidth < 2;
+    if (nav.hidden || reducedMotion.matches || document.hidden || !visible || dragging || section.querySelector(':focus-visible')) return;
+    timer = setInterval(() => move(1), 1000);
   }
 
-  previous.addEventListener('click', () => list.scrollBy({ left: -list.clientWidth, behavior: motion() }), { signal });
-  next.addEventListener('click', () => list.scrollBy({ left: list.clientWidth, behavior: motion() }), { signal });
-  toggle.addEventListener('click', () => { purchasedWishAutoplay = !isPlaying(); syncMode(); }, { signal });
-  list.addEventListener('scroll', sync, { passive: true, signal });
-  section.addEventListener('pointerenter', event => { if (event.pointerType === 'mouse') { hovered = true; sync(); } }, { signal });
-  section.addEventListener('pointerleave', event => { if (event.pointerType === 'mouse') { hovered = false; sync(); } }, { signal });
-  list.addEventListener('pointerdown', () => { dragging = true; sync(); }, { signal });
-  for (const event of ['pointerup', 'pointercancel']) window.addEventListener(event, () => { if (dragging) { dragging = false; sync(); } }, { signal });
+  previous.addEventListener('click', () => { move(-1); sync(); }, { signal });
+  next.addEventListener('click', () => { move(1); sync(); }, { signal });
+  list.addEventListener('wheel', sync, { passive: true, signal });
+  list.addEventListener('touchstart', () => { dragging = true; sync(); }, { passive: true, signal });
+  for (const event of ['touchend', 'touchcancel']) list.addEventListener(event, e => {
+    if (!e.touches.length) { dragging = false; sync(); }
+  }, { passive: true, signal });
   section.addEventListener('focusin', sync, { signal });
   section.addEventListener('focusout', () => queueMicrotask(sync), { signal });
   document.addEventListener('visibilitychange', sync, { signal });
-  reducedMotion.addEventListener('change', syncMode, { signal });
+  reducedMotion.addEventListener('change', sync, { signal });
   const resize = new ResizeObserver(sync);
   resize.observe(list);
   const intersection = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; sync(); });
   intersection.observe(section);
-  disposePurchasedWishCarousel = () => { clearTimeout(timer); controller.abort(); resize.disconnect(); intersection.disconnect(); };
+  disposePurchasedWishCarousel = () => { clearInterval(timer); controller.abort(); resize.disconnect(); intersection.disconnect(); };
   [...list.children].forEach((tile, index) => hydratePurchasedWishArt(tile, wishes[index], `purchased-outline-${index}`));
-  syncMode();
+  sync();
 }
 
 function renderWishes() {
