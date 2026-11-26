@@ -4,7 +4,7 @@ import { largeDrinkArrivals } from './arrival-guard.js';
 import { escapeHtml as h, safeUrl, uid, number, restockQuantity, stocktakeQuantities, getConsumption, getWeeklyPopularity } from './domain.js';
 import { InventoryStore } from './store.js';
 import { CATEGORIES_ORDER, DEFAULT_CASE_SIZE } from './catalog.js';
-import { drinkPack, renderFridge, renderFridgePopularity, syncFridgeDoor, syncFridgeScene } from './fridge.js';
+import { drinkPack, renderFridge, renderFridgePopularity, renderPantryStockTabs, syncFridgeDoor, syncFridgeScene } from './fridge.js';
 import { GoogleInventoryStore } from './google-store.js';
 import { wishSupportDetails, wishSupportPreview } from './wish-support.js';
 import { renderDrinkInformation } from './drink-information.js';
@@ -28,15 +28,13 @@ const activeDrinks = () => store.data.drinks.filter((drink) => drink.active !== 
 const packagingTypes = ['窄瓶鋁箔包', '鋁箔包', '鐵罐', '小型鐵罐', '長鐵罐', '寶特瓶', '大瓶裝', '其他'];
 const restockViews = { restock: 'drink', 'restock-snack':'snack', 'restock-frozen':'frozen', 'restock-noodle': 'noodle', 'restock-coffee':'coffee', 'restock-toner': 'toner' };
 const NEW_ARRIVAL_VALUE = '__new__';
-const viewNames = { overview: '飲料冰箱', wishes: '採買許願池', archive: '歷史品項', admin: '管理後台', products: '倉庫庫存', count: '快速盤點', restock: '到貨入庫 · 飲料', 'restock-snack':'到貨入庫 · 零食', 'restock-frozen':'到貨入庫 · 冰品', 'restock-noodle': '到貨入庫 · 泡麵', 'restock-toner': '到貨入庫 · 碳粉', 'manage-wishes': '願望管理', history: '異動紀錄' };
+const viewNames = { overview: '飲料冰箱', wishes: '採買許願池', admin: '管理後台', products: '倉庫庫存', count: '快速盤點', restock: '到貨入庫 · 飲料', 'restock-snack':'到貨入庫 · 零食', 'restock-frozen':'到貨入庫 · 冰品', 'restock-noodle': '到貨入庫 · 泡麵', 'restock-toner': '到貨入庫 · 碳粉', 'manage-wishes': '願望管理', history: '異動紀錄' };
 viewNames.consumption = '消耗排行榜';
 viewNames.gacha = '今日補給扭蛋';
 viewNames['snack-drawer'] = '零食抽屜';
 viewNames['restock-coffee'] = '到貨入庫 · 咖啡豆';
 const adminViews = new Set(['admin', 'consumption', 'products', 'count', ...Object.keys(restockViews), 'manage-wishes', 'history']);
 let view = 'overview';
-const archiveKinds = { drink: '飲料', snack: '零食', noodle: '泡麵' };
-let archiveKind = 'drink';
 let wishFilter = 'all';
 const wishKind = (wish) => wish?.kind === 'snack' ? 'snack' : 'drink';
 const wishKindLabel = (kind) => kind === 'snack' ? '零食' : '飲料';
@@ -46,6 +44,7 @@ let query = '';
 let category = '';
 let display = 'fridge';
 let fridgeOpen = false;
+let fridgeHistory = false;
 try { if (localStorage.getItem('holdwin-display') === 'list') display = 'list'; } catch { /* optional display preference */ }
 let dirty = false;
 let modalDirty = false;
@@ -196,7 +195,7 @@ function forecast(drink) {
 }
 
 function inventoryToolbar(warehouse = false) {
-  return `<div class="toolbar">${warehouse ? `<div class="filter-tabs" role="group" aria-label="倉庫篩選">${[['low', '庫存量少'], ['all', '供應中'], ['archived', '歷史品項']].map(([value, label]) => `<button class="filter-tab ${filter === value ? 'selected' : ''}" data-filter="${value}" aria-pressed="${filter === value}">${label}</button>`).join('')}</div>` : `<span class="fridge-browse-label">${activeDrinks().length} 款辦公室小補給</span>`}<div class="search-controls"><label class="search-field"><span aria-hidden="true">⌕</span><input id="search" type="search" maxlength="80" placeholder="找找喜歡的飲料…" aria-label="搜尋飲料" value="${h(query)}"></label><select id="category-filter" aria-label="篩選飲料分類"><option value="">所有分類</option>${categoryNames().map((name) => `<option value="${h(name)}"${category === name ? ' selected' : ''}>${h(name)}</option>`).join('')}</select></div></div>`;
+  return `<div class="toolbar">${warehouse ? `<div class="filter-tabs" role="group" aria-label="倉庫篩選">${[['low', '庫存量少'], ['all', '供應中'], ['archived', '歷史品項']].map(([value, label]) => `<button class="filter-tab ${filter === value ? 'selected' : ''}" data-filter="${value}" aria-pressed="${filter === value}">${label}</button>`).join('')}</div>` : renderPantryStockTabs(fridgeHistory)}<div class="search-controls"><label class="search-field"><span aria-hidden="true">⌕</span><input id="search" type="search" maxlength="80" placeholder="找找喜歡的飲料…" aria-label="搜尋飲料" value="${h(query)}"></label><select id="category-filter" aria-label="篩選飲料分類"><option value="">所有分類</option>${categoryNames().map((name) => `<option value="${h(name)}"${category === name ? ' selected' : ''}>${h(name)}</option>`).join('')}</select></div></div>`;
 }
 
 function renderOverview() {
@@ -215,11 +214,9 @@ function renderSnackDrawer() {
   const load = async () => {
     root.innerHTML = '<div class="loading-state" role="status"><span class="loader"></span><p>正在開啟零食抽屜…</p></div>';
     try {
-      const { mountSnackDrawer, snackDrawerRankings } = await loadSnackDrawerModule();
-      if (root.isConnected) mountSnackDrawer(root, showModal, async () => {
-        const source = store.mode === 'google' ? (await store.fetchWarehouseSnapshot()).result : store;
-        return snackDrawerRankings(source);
-      });
+      const { mountSnackDrawer } = await loadSnackDrawerModule();
+      if (root.isConnected) root.refreshInventory = mountSnackDrawer(root, showModal, async (force) =>
+        store.mode === 'google' ? (await store.fetchWarehouseSnapshot(force)).result : store);
     } catch {
       if (!root.isConnected) return;
       root.innerHTML = '<div class="panel"><h1>零食抽屜</h1><p>暫時無法開啟零食抽屜。</p><button class="button" type="button">重新載入</button></div>';
@@ -443,18 +440,19 @@ function openSupplyForm(action,id){
 
 function renderInventoryTable() {
   const warehouse = view === 'products';
+  const archived = warehouse ? filter === 'archived' : fridgeHistory;
   let drinks = store.data.drinks.filter((drink) =>
-    (warehouse && filter === 'archived' ? drink.active === false : drink.active !== false) &&
+    (archived ? drink.active === false : drink.active !== false) &&
     (!warehouse || filter==='archived' || matchesInventoryStockFilter(drink,filter)) &&
     (!category || drink.category === category) && (!query || drink.name.toLocaleLowerCase().includes(query.toLocaleLowerCase())));
   const target = $('#inventory-table');
   if(warehouse)drinks=sortedStock(drinks);
   if (!drinks.length && warehouse) { target.innerHTML = empty('這一格還沒有飲料', '換個分類或關鍵字看看。'); return; }
   if (!warehouse) {
-    target.innerHTML = renderFridge(drinks, { loading:store.mode==='google'&&!store.googleViewLoaded, isOpen: fridgeOpen, lastInventoryAt: store.data.lastInventoryAt, formatDate, showQuantities: false,
+    target.innerHTML = renderFridge(archived ? activeDrinks() : drinks, { archiveContent: archived ? renderArchivedDrinks(drinks) : '', loading:store.mode==='google'&&!store.googleViewLoaded, isOpen: fridgeOpen, lastInventoryAt: store.data.lastInventoryAt, formatDate, showQuantities: false,
       popularityOpen: popularityExpanded, popularity: store.mode === 'google' ? store.popularity : getWeeklyPopularity(store.data.drinks, store.data.events), popularityLoading, popularityError });
     syncFridgeScene(target.querySelector('.pantry-stage'));
-    if (fridgeOpen && popularityExpanded) loadFridgePopularity();
+    if (fridgeOpen && !fridgeHistory && popularityExpanded) loadFridgePopularity();
     return;
   }
   const copyBar = ['all','low','archived'].includes(filter) ? `<div class="refill-copy-bar"><span>只複製本頁已勾選「需要補貨」的品項。</span>${button('⧉ 複製補貨清單', 'copy-low', '', 'button-small button-outline')}</div>` : '';
@@ -474,37 +472,11 @@ async function loadFridgePopularity() {
   finally { popularityLoading = false; update(); }
 }
 
-function renderArchive(focusTab = false) {
-  const tabs = Object.entries(archiveKinds).map(([kind, label]) =>
-    `<button type="button" class="filter-tab${kind === archiveKind ? ' selected' : ''}" data-action="archive-kind" data-id="${kind}" aria-pressed="${kind === archiveKind}">${label}</button>`).join('');
-  main.innerHTML = heading('ONCE IN OUR PANTRY', '那些曾經吃/喝過的', '這裡收著茶水間曾經供應的飲料、零食和泡麵。') +
-    `<div class="filter-tabs archive-tabs" role="group" aria-label="歷史品項分類">${tabs}</div><div id="archive-items"></div>`;
-  if (focusTab) main.querySelector('.archive-tabs [aria-pressed="true"]').focus({ preventScroll: true });
-  const target = main.querySelector('#archive-items');
-  if (archiveKind !== 'drink') {
-    loadSupplyArchive(target, archiveKind);
-    return;
-  }
-  const archived = store.data.drinks.filter((drink) => drink.active === false);
-  target.innerHTML = `<div class="archive-grid">${archived.length ? archived.map((drink) => {
-      const wish=store.data.wishes.find(item=>item.sourceDrinkId===drink.id),voted=wish&&store.hasVoted(wish.id);
-      return `<article class="panel archive-card" data-archived-drink-id="${h(drink.id)}">${drinkPack(drink)}<h2>${h(drink.name)}</h2><p>${h(drink.category)} · ${h(drink.packaging || drink.unit)}</p><span class="pill pill-muted">歷史品項</span><div class="form-actions">${button('查看飲料資訊', 'view-drink', `type="button" data-id="${h(drink.id)}"`, 'button-small button-outline')}</div><div class="archive-wish-actions"><button type="button" class="wish-vote-button${voted?' is-voted':''}" data-action="archive-wish" data-id="${h(drink.id)}" aria-pressed="${!!voted}"${voted||!store.supportsArchiveWishes?' disabled':''}>${voted?'♥ 已記下你的回購願望':'♡ 我還想喝，希望有機會可以再買'}</button>${wish?`<button type="button" class="wish-vote-count" data-action="view-wish-supporters" data-id="${h(wish.id)}">${wish.votes||0} 人還想喝</button>`:''}${!store.supportsArchiveWishes?'<small class="subtle">更新 Google 部署後即可登記回購願望。</small>':''}</div></article>`;
-    }).join('') : `<div class="panel">${empty('每一款喜歡，都值得被記得', '品項停買後會收進這裡，不會刪掉以前的紀錄。')}</div>`}</div>`;
-}
-
-async function loadSupplyArchive(target, kind, force = false) {
-  target.innerHTML = '<p class="subtle" role="status">正在讀取歷史品項…</p>';
-  try {
-    const [{ mountSupplyArchive }, supplies] = await Promise.all([
-      loadSnackDrawerModule(),
-      store.mode === 'google' ? store.fetchWarehouseSnapshot(force).then(({ result }) => result.supplies) : supplyItems(),
-    ]);
-    if (target.isConnected) mountSupplyArchive(target, supplies.filter(item => item.kind === kind && item.active === false), showModal);
-  } catch {
-    if (!target.isConnected) return;
-    target.innerHTML = '<p class="subtle" role="status">暫時無法讀取歷史品項。 <button class="text-link" type="button">重新讀取</button></p>';
-    target.querySelector('button').addEventListener('click', () => loadSupplyArchive(target, kind, true));
-  }
+function renderArchivedDrinks(drinks) {
+  return `<section class="fridge-archive" aria-label="那些曾經喝過的"><h2>那些曾經喝過的</h2><div class="archive-grid">${drinks.length ? drinks.map((drink) => {
+    const wish = store.data.wishes.find(item => item.sourceDrinkId === drink.id), voted = wish && store.hasVoted(wish.id);
+    return `<article class="panel archive-card" data-archived-drink-id="${h(drink.id)}">${drinkPack(drink)}<h3>${h(drink.name)}</h3><p>${h(drink.category)} · ${h(drink.packaging || drink.unit)}</p><div class="form-actions">${button('查看飲料資訊', 'view-drink', `type="button" data-id="${h(drink.id)}"`, 'button-small button-outline')}</div><div class="archive-wish-actions"><button type="button" class="wish-vote-button${voted?' is-voted':''}" data-action="archive-wish" data-id="${h(drink.id)}" aria-pressed="${!!voted}"${voted||!store.supportsArchiveWishes?' disabled':''}>${voted?'♥ 已記下你的回購願望':'♡ 我還想喝，希望有機會可以再買'}</button>${wish?`<button type="button" class="wish-vote-count" data-action="view-wish-supporters" data-id="${h(wish.id)}">${wish.votes||0} 人還想喝</button>`:''}${!store.supportsArchiveWishes?'<small class="subtle">更新 Google 部署後即可登記回購願望。</small>':''}</div></article>`;
+  }).join('') : '<p class="subtle" role="status">找不到符合的歷史飲料。</p>'}</div></section>`;
 }
 
 function renderGoogleLink(url, label) {
@@ -909,7 +881,7 @@ function render() {
   }
   if (store.mode === 'google' && !store.supportsWebsiteEntry && view === 'count') { renderGoogleEntry(); return; }
   if (Object.hasOwn(restockViews, view)) renderRestock();
-  else ({ overview: renderOverview, 'snack-drawer': renderSnackDrawer, gacha:renderGachaPage, consumption:renderConsumption, products: renderWarehouse, archive: renderArchive, admin: renderAdmin, count: renderCount, wishes: renderWishes, 'manage-wishes': renderWishes, history: renderHistory })[view]();
+  else ({ overview: renderOverview, 'snack-drawer': renderSnackDrawer, gacha:renderGachaPage, consumption:renderConsumption, products: renderWarehouse, admin: renderAdmin, count: renderCount, wishes: renderWishes, 'manage-wishes': renderWishes, history: renderHistory })[view]();
 }
 
 async function route() {
@@ -922,13 +894,20 @@ async function route() {
     next = 'wishes';
     history.replaceState(null, '', '#wishes');
   }
-  const nextView = Object.hasOwn(viewNames, next) ? next : 'overview';
+  const showDrinkHistory = next === 'archive' || next === 'overview-history';
+  const nextView = showDrinkHistory ? 'overview' : Object.hasOwn(viewNames, next) ? next : 'overview';
   if (dirty && nextView !== view && !confirm('這一頁還有未儲存的輸入，確定要離開嗎？')) {
     history.replaceState(null, '', `#${view}`);
     return;
   }
   if(nextView==='products'&&view!=='products'){filter=warehouseArchiveShortcut?'archived':'all';warehouseArchiveShortcut=false;supplyFilter=filter==='archived'?'archived':'all';query='';category='';supplyQuery='';supplyCategory='';supplyProduct='';}
-  if ((view === 'snack-drawer' || view === 'archive') && nextView !== view && modal.open) modal.close();
+  if ((view === 'snack-drawer' || view === 'overview') && nextView !== view && modal.open) modal.close();
+  if (nextView === 'overview' && (showDrinkHistory || fridgeHistory)) {
+    fridgeHistory = showDrinkHistory;
+    fridgeOpen = true;
+    query = ''; category = '';
+    if (next === 'archive') history.replaceState(null, '', '#overview-history');
+  }
   view = nextView;
   const sequence = ++routeSequence;
   if(store.mode==='google'&&view!=='admin')store.cancelOtherViewReads(adminViews.has(view));
@@ -1153,7 +1132,7 @@ async function submitForm(form) {
   }
   if (form.id === 'archive-wish-form') {
     const result=await store.supportArchivedDrink(form.dataset.id,String(values.get('voterName')||'').trim());
-    modalDirty=false;modal.close();renderArchive();googleWriteToast(result?.alreadyVoted?'這個瀏覽器已經登記過，保留原本的一票。':'已記下你的回購願望！');return;
+    modalDirty=false;modal.close();if(view==='overview'&&fridgeHistory)renderInventoryTable();googleWriteToast(result?.alreadyVoted?'這個瀏覽器已經登記過，保留原本的一票。':'已記下你的回購願望！');return;
   }
   if (form.id === 'vote-form') {
     const voterName = String(values.get('voterName') || '').trim();
@@ -1327,13 +1306,6 @@ async function runAction(action, id) {
   }
   if (action === 'quick-add-drink') { if(store.mode==='google'&&!store.googleViewLoaded)await store.readPublic(); if(view!=='admin'&&view!=='products')return;openQuickDrink(); return; }
   if (action === 'retry-admin-summary') { store.adminSummaryReadAt=-Infinity;loadAdminSummary({force:true});return; }
-  if (action === 'archive-kind') {
-    if (view === 'archive' && Object.hasOwn(archiveKinds, id) && archiveKind !== id) {
-      archiveKind = id;
-      renderArchive(true);
-    }
-    return;
-  }
   if (action === 'archive-wish') {
     const drink=store.data.drinks.find(item=>item.id===id&&item.active===false);if(!drink)throw new Error('找不到這個歷史品項。');
     showModal('這款，我還想喝',`留下姓名，讓採買時知道大家還想喝「${h(drink.name)}」。`, `<form id="archive-wish-form" data-id="${h(id)}"><label class="field">姓名<input name="voterName" required maxlength="80" autocomplete="name"></label><div class="form-actions">${button('取消','close-modal','type="button"','button-outline')}<button type="submit" class="button">送出回購願望</button></div></form>`);return;
@@ -1367,7 +1339,19 @@ async function runAction(action, id) {
     return;
   }
   if (action === 'copy-low') { if (!store.canManage && !store.canEdit) throw new Error('請從倉庫管理產生補貨清單。'); await copyLowStock(); return; }
-  if (action === 'toggle-door') { fridgeOpen = !fridgeOpen; syncFridgeDoor($('.fridge'), fridgeOpen); if (fridgeOpen && popularityExpanded) loadFridgePopularity(); return; }
+  if (action === 'toggle-door') {
+    if (!fridgeOpen && fridgeHistory) {
+      fridgeHistory = false;
+      query = ''; category = '';
+      renderOverview();
+      $('.fridge-door')?.focus({ preventScroll: true });
+    }
+    fridgeOpen = !fridgeOpen;
+    syncFridgeDoor($('.fridge'), fridgeOpen);
+    if (!fridgeOpen && fridgeHistory) history.replaceState(null, '', '#overview');
+    if (fridgeOpen && popularityExpanded) loadFridgePopularity();
+    return;
+  }
   if (action === 'retry-popularity') { loadFridgePopularity(); return; }
   if (action === 'new-wish') { openWish(); return; }
   if (action === 'export' || action === 'export-history') {
@@ -1450,7 +1434,7 @@ document.addEventListener('click', (event) => {
   const action = event.target.closest('[data-action]');
   if (action) {
     event.preventDefault();
-    if (['coffee-arrival','coffee-count','gacha-draw','gacha-replay','gacha-retry','count-kind','batch-arrival','batch-add','batch-remove','snack-details','open-empty-stock','open-snack-stock','snack-new','retry-admin-summary','archive-kind','archive-wish','supply-stock-filter','supply-expiry-set','supply-expiry-add','supply-expiry-remove','warehouse-kind','supply-arrival','supply-count','supply-count-kind','supply-expiry-close','close-modal', 'quick-add-drink', 'new-drink', 'new-wish', 'edit-drink', 'edit-wish', 'vote-wish', 'view-wish-supporters', 'view-drink-label', 'login', 'view-drink', 'toggle-door', 'retry-popularity', 'retry-route'].includes(action.dataset.action)) {
+    if (['coffee-arrival','coffee-count','gacha-draw','gacha-replay','gacha-retry','count-kind','batch-arrival','batch-add','batch-remove','snack-details','open-empty-stock','open-snack-stock','snack-new','retry-admin-summary','archive-wish','supply-stock-filter','supply-expiry-set','supply-expiry-add','supply-expiry-remove','warehouse-kind','supply-arrival','supply-count','supply-count-kind','supply-expiry-close','close-modal', 'quick-add-drink', 'new-drink', 'new-wish', 'edit-drink', 'edit-wish', 'vote-wish', 'view-wish-supporters', 'view-drink-label', 'login', 'view-drink', 'toggle-door', 'retry-popularity', 'retry-route'].includes(action.dataset.action)) {
       if (!busy) runAction(action.dataset.action, action.dataset.id).catch((error) => toast(error.message, true));
     } else withBusy(() => runAction(action.dataset.action, action.dataset.id), action);
   }
@@ -1463,6 +1447,18 @@ document.addEventListener('click', (event) => {
       element.setAttribute('aria-pressed', element === displayButton ? 'true' : 'false');
     });
     renderInventoryTable();
+  }
+  const stockTab = event.target.closest('.fridge-panel [data-pantry-stock]');
+  if (stockTab && !busy && view === 'overview' && fridgeOpen) {
+    const archived = stockTab.dataset.pantryStock === 'history';
+    if (archived !== fridgeHistory) {
+      fridgeHistory = archived;
+      query = ''; category = '';
+      inputSequence++;
+      history.replaceState(null, '', archived ? '#overview-history' : '#overview');
+      renderOverview();
+      $('.fridge-panel [data-pantry-stock][aria-pressed="true"]')?.focus({ preventScroll: true });
+    }
   }
   const tab = event.target.closest('[data-filter]');
   if (tab && !busy) {
@@ -1560,7 +1556,7 @@ $('#logout-button').addEventListener('click', () => {
 });
 async function refreshCurrentView(manual = false) {
   if (!ready || busy || refreshing || routeLoading) return;
-  if (!manual && (dirty || modal.open || !['overview', 'wishes', 'history', 'archive', 'consumption', 'restock-coffee', 'products', 'count'].includes(view) || document.hidden)) return;
+  if (!manual && (dirty || modal.open || !['overview', 'wishes', 'history', 'consumption', 'restock-coffee', 'products', 'count'].includes(view) || document.hidden)) return;
   if (manual && dirty && !confirm('重新讀取會捨棄未儲存的輸入，確定繼續嗎？')) return;
   const sequence = routeSequence, inputs = inputSequence, currentView = view, revision = store.revision;
   const button = $('#refresh-button');
@@ -1569,14 +1565,19 @@ async function refreshCurrentView(manual = false) {
   if (manual) { button.disabled = true; button.setAttribute('aria-busy', 'true'); }
   try {
     if(view==='admin'&&store.mode==='google'){store.adminSummaryReadAt=-Infinity;await loadAdminSummary({force:true});return;}
+    if (view === 'snack-drawer' && manual && main.firstElementChild?.refreshInventory) {
+      await main.firstElementChild.refreshInventory(true);
+      if (view === currentView) toast('已讀取最新庫存。');
+      return;
+    }
     await store.read();
     // A read must never replace a newer page, an open dialog, or fresh input.
     if (sequence !== routeSequence || inputs !== inputSequence || currentView !== view || busy || modal.open || (!manual && dirty)) return;
-    if(manual&&view==='overview'&&fridgeOpen&&popularityExpanded)store.invalidatePopularity?.();
+    if(manual&&view==='overview'&&fridgeOpen&&!fridgeHistory&&popularityExpanded)store.invalidatePopularity?.();
     if(view==='consumption'&&!manual){updateRankingResults();updateChrome();}
     else if (manual || revision !== store.revision) render();
     else updateChrome();
-    if(view==='overview'&&fridgeOpen&&popularityExpanded)loadFridgePopularity();
+    if(view==='overview'&&fridgeOpen&&!fridgeHistory&&popularityExpanded)loadFridgePopularity();
     if (manual) toast('已讀取最新庫存。');
   } catch (error) {
     if (sequence !== routeSequence || currentView !== view || busy) return;
@@ -1595,7 +1596,7 @@ $('#refresh-button').addEventListener('click', () => {
 main.addEventListener('toggle',event=>{
   if(!event.target.matches('.fridge-popularity'))return;
   popularityExpanded=event.target.open;
-  if(popularityExpanded&&fridgeOpen&&view==='overview')loadFridgePopularity();
+  if(popularityExpanded&&fridgeOpen&&!fridgeHistory&&view==='overview')loadFridgePopularity();
 },true);
 window.addEventListener('hashchange', route);
 window.addEventListener('beforeunload', (event) => {

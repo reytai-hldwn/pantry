@@ -5,11 +5,29 @@ import {NamedGoogleInventoryStore} from './helpers/named-stores.mjs';
 import {GoogleInventoryStore,normalizeGooglePublicData} from '../js/google-store.js';
 import {SNACK_CATEGORIES,SNACK_UNITS,SUPPLY_CATALOG,initialSupplies,normalizeSupplyWarehouse,prepareSupplyCatalog,supplyBatches,supplyHasUntrackedExpiry,supplyNeedsExpiry,supplySupportsExpiryHistory} from '../js/supplies.js';
 import {normalizeRestockPreferences} from '../js/restock-preferences.js';
+import {stockDrawerProducts} from '../js/snack-drawer.js';
 import {createCompanyData} from '../js/catalog.js';
 import {websiteBackend} from './helpers/google-website.mjs';
 const plain=value=>JSON.parse(JSON.stringify(value));
 const storage=()=>{const values=new Map();return{values,getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,value),removeItem:key=>values.delete(key)};};
 const endpoint='https://script.google.com/macros/s/SNACK_DOMAIN/exec';
+
+test('the drawer separates current and historical flavors, retains exact nutrition and includes new stock',()=>{
+ const supplies=[
+  {id:'strawberry',kind:'snack',name:'Bisco乳酸菌餅乾',category:'甜/鹹餅乾',flavor:'草莓',active:true},
+  {id:'milk',kind:'snack',name:'Bisco乳酸菌餅乾',category:'甜/鹹餅乾',flavor:'牛奶',active:false},
+  {id:'new',kind:'snack',name:'新入庫零食',category:'健康零食',active:true},
+  {id:'noodle-02',kind:'noodle',name:'滿漢大餐牛肉麵',active:false},
+  {id:'toner',kind:'toner',name:'碳粉',active:false},
+ ];
+ const current=stockDrawerProducts(supplies,false), history=stockDrawerProducts(supplies,true);
+ assert.deepEqual(current.map(item=>item.name),['Bisco乳酸菌餅乾','新入庫零食']);
+ assert.deepEqual(history.map(item=>item.name),['Bisco乳酸菌餅乾','滿漢大餐牛肉麵']);
+ assert.deepEqual(current[0].details.map(item=>item.flavor),['草莓']);
+ assert.deepEqual(history[0].details.map(item=>item.flavor),['牛奶']);
+ assert.equal(history[1].details[0].flavor,'珍味牛肉');
+ assert.equal(history[1].details[0].nutrition.serving,187);
+});
 
 function demo(t,data){
  const local=storage(),session=storage();

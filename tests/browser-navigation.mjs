@@ -54,19 +54,23 @@ try{
       await page.locator(`#navigation [data-view="${view}"]`).click();
       await page.waitForFunction(view=>document.body.dataset.view===view&&!document.querySelector('#main .loading-state'),view);
     };
+    const showHistory=async()=>{
+      await page.evaluate(()=>{ location.hash='overview-history'; });
+      await page.waitForSelector('.fridge-archive');
+    };
     const poll=()=>page.evaluate(()=>{window.__pantryPollResult=window.__pantryPoll();});
     const finishPoll=()=>page.evaluate(()=>window.__pantryPollResult);
     const menu=async()=>{if(width<=900&&await page.locator('#pantry-utilities').isHidden())await page.locator('.mobile-menu-toggle').click();};
     await page.goto(`${base}/index.html`);await page.waitForSelector('.pantry-stage');
     assert.deepEqual(reads,['public'],'initial data is not fetched twice');
-    await nav('archive');assert.equal(await page.locator('.archive-card').count(),8);await nav('wishes');await nav('overview');
+    await showHistory();assert.equal(await page.locator('.archive-card').count(),8);await nav('wishes');await nav('overview');
     assert.deepEqual(reads,['public'],'front tabs reuse the same loaded catalog');
 
     backend.sheets.Catalog.rows[1][1]='更新後的牛乳';
     let held=holdNext();await poll();await held.started;
-    await nav('archive');assert.equal(reads.length,2,'navigation does not wait for polling');
+    await showHistory();assert.equal(reads.length,2,'navigation does not wait for polling');
     held.release();await finishPoll();assert.equal(await page.locator('.archive-card').count(),8);
-    assert.match(await page.locator('h1').innerText(),/曾經喝過/);
+    assert.match(await page.locator('.fridge-archive > h2').innerText(),/曾經喝過/);
 
     await menu();held=holdNext();await page.locator('#refresh-button').click();await held.started;
     await nav('wishes');held.release();
@@ -81,10 +85,10 @@ try{
     assert.equal(await page.locator('#modal').evaluate(modal=>modal.open),true);
     await page.locator('#modal [data-action="close-modal"]').first().click();
 
-    held=holdNext();held.fail=true;await poll();await held.started;await nav('archive');
+    held=holdNext();held.fail=true;await poll();await held.started;await showHistory();
     held.release();await finishPoll();assert.doesNotMatch(await page.locator('#connection-status').innerText(),/中斷/);
 
-    await menu();await page.locator('#auth-button').click();await page.waitForSelector('.admin-grid');
+    await menu();await page.locator('#auth-button').click();await page.waitForSelector('#admin-restock');
     assert.equal(reads.filter(action=>action==='warehouse').length,0,'admin entry uses its lightweight summary');
     await nav('count');const warehouseReads=reads.filter(action=>action==='warehouse').length;assert.equal(warehouseReads,1);
     for(const view of ['restock','products','history'])await nav(view);

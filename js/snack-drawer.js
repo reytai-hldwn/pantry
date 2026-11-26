@@ -2,6 +2,7 @@ import { escapeHtml as h, safeUrl } from './domain.js';
 import { buildConsumptionRecords, consumptionPeriod, selectConsumption } from './consumption.js';
 import { SNACK_CATEGORIES, supplyLabel, supplyNameKey } from './supplies.js';
 import { SNACK_DRAWER_PRODUCTS } from './snack-drawer-catalog.js';
+import { renderPantryStockTabs } from './fridge.js';
 
 export const SNACK_DRAWER_SCENE = './assets/snacks/tea-room-drawer.webp';
 export const SNACK_DRAWER_CONTENTS = './assets/snacks/tea-room-drawer-contents.webp';
@@ -10,7 +11,6 @@ const snackSceneSize = { width: 1446, height: 1087 };
 const snackDrawerCorners = [[432, 762], [856, 749], [857, 791], [432, 808]];
 const snackDrawerCrop = { x: 432, y: 749, width: 425, height: 59 };
 
-const productsByKey = new Map(SNACK_DRAWER_PRODUCTS.map(product => [product.key, product]));
 const drawerCategories = [...SNACK_CATEGORIES, '泡麵'];
 const normalizeSnackSearch = text => text.normalize('NFKC').toLocaleLowerCase('zh-TW');
 
@@ -46,18 +46,37 @@ export function renderGachaSnackArt(snack) {
 }
 
 function snackProductCard(product) {
-  const { key, name, flavors, imageCaption } = product;
+  const { key, name, flavors, imageCaption, photos } = product;
   return `<button class="snack-product" type="button" data-snack-product-key="${h(key)}">
-    ${snackProductArt(product, `outline-${key}`)}
+    ${photos.length ? snackProductArt(product, `outline-${key}`) : '<span class="snack-product-art snack-art-unavailable">商品圖片待補</span>'}
     <span class="snack-product-title">${h(name)}${flavors ? `<small>${h(flavors)}</small>` : ''}${imageCaption ? `<small>${h(imageCaption)}</small>` : ''}</span>
   </button>`;
 }
 
-function snackShelves(search, selected) {
+export function stockDrawerProducts(supplies, archived) {
+  const products = new Map();
+  for (const item of supplies) {
+    if ((item.kind !== 'snack' && item.kind !== 'noodle') || (item.active === false) !== archived) continue;
+    const product = findDrawerProduct(item) || {
+      key: `inventory-${item.id}`, name: item.name, category: item.kind === 'noodle' ? '泡麵' : item.category,
+      flavors: item.flavor || '', photos: [], details: [{ flavor: item.flavor || '', nutrition: null }],
+    };
+    if (!products.has(product.key)) products.set(product.key, { product, flavors: new Set() });
+    products.get(product.key).flavors.add(supplyNameKey(item).split('\u0000')[1]);
+  }
+  return [...products.values()].map(({ product, flavors }) => {
+    if (product.details.length < 2 || flavors.has('')) return product;
+    const details = product.details.filter(detail => flavors.has(normalizeSnackSearch(detail.flavor).trim()));
+    if (!details.length || details.length === product.details.length) return product;
+    return { ...product, details, flavors: details.map(detail => detail.flavor).join('、') };
+  });
+}
+
+function snackShelves(products, search, selected) {
   const terms = normalizeSnackSearch(search).trim().split(/\s+/).filter(Boolean);
   const shelves = drawerCategories.map((category, index) => {
     if (selected && selected !== category) return '';
-    const items = SNACK_DRAWER_PRODUCTS.filter(product => {
+    const items = products.filter(product => {
       if (product.category !== category) return false;
       const label = normalizeSnackSearch([product.name, product.flavors, ...product.details.map(detail => detail.flavor)].join(' '));
       return terms.every(term => label.includes(term));
@@ -95,26 +114,6 @@ function openDrawerProduct(product, showDetails) {
   }).join('');
   const photoNote = product.photoNote ? `<p class="subtle">${h(product.photoNote)}</p>` : '';
   showDetails(h(product.name), h(product.category), `<div class="snack-nutrition">${details}${photoNote}</div>`);
-}
-
-export function mountSupplyArchive(root, items, showDetails) {
-  if (!items.length) {
-    root.innerHTML = '<p class="subtle" role="status">目前沒有這類歷史品項。</p>';
-    return;
-  }
-  root.innerHTML = `<div class="archive-grid">${items.map((item, index) => {
-    const product = findDrawerProduct(item);
-    const art = product?.photos.length ? snackProductArt(product, `archive-outline-${index}`) : '';
-    const details = [item.category || '泡麵', item.flavor].filter(Boolean).map(h).join(' · ');
-    return `<article class="panel archive-card archive-food-card" data-archived-supply-id="${h(item.id)}">
-      ${art}<h3>${h(item.name)}</h3><p>${details}</p>
-      ${product ? `<button class="button button-small button-outline" type="button" data-archive-product="${h(product.key)}">查看商品資訊</button>` : ''}
-    </article>`;
-  }).join('')}</div>`;
-  root.addEventListener('click', event => {
-    const product = productsByKey.get(event.target.closest('[data-archive-product]')?.dataset.archiveProduct);
-    if (product) openDrawerProduct(product, showDetails);
-  });
 }
 
 function snackDrawerPath(context, points) {
@@ -234,7 +233,7 @@ function renderSnackRanking({ unit, observed, rows } = {}) {
   return `<ol class="snack-ranking-list">${rows.map((row, index) => `<li><span class="popularity-rank" aria-hidden="true">${index + 1}</span><span class="snack-rank-name">${h(row.label)}</span><span>約 <strong>${row.weekly < .1 ? '少於 0.1' : snackRateFormatter.format(row.weekly)}</strong> ${h(unit)}／週</span></li>`).join('')}</ol><p class="popularity-note">最近 30 天 · 依實際盤點和入庫紀錄估算，每週以 5 個工作日計。</p>`;
 }
 
-export function mountSnackDrawer(root, showDetails, readRankings) {
+export function mountSnackDrawer(root, showDetails, readWarehouse) {
   const { width, height } = snackSceneSize;
   const crop = snackDrawerCrop;
   const hitPoints = snackDrawerCorners.map(([x, y]) => [x - crop.x, y - crop.y]);
@@ -258,6 +257,7 @@ export function mountSnackDrawer(root, showDetails, readRankings) {
     <section class="snack-cabinet" id="snack-cabinet" aria-label="抽屜內的零食" hidden>
       <header class="snack-open-heading pantry-heading"><h2>今天，吃點什麼</h2><p class="page-description">想吃點鹹的，還是來點甜的？挑一份喜歡的零食，休息一下。</p></header>
       <div class="snack-controls">
+        ${renderPantryStockTabs()}
         <label class="snack-search"><span aria-hidden="true">⌕</span><input type="search" maxlength="80" aria-label="搜尋零食或泡麵" placeholder="搜尋品名或口味"></label>
         <select aria-label="篩選零食小類"><option value="">全部小類</option>${drawerCategories.map(category => `<option value="${h(category)}">${h(category)}</option>`).join('')}</select>
         <button class="button button-small button-outline snack-close" type="button">推回抽屜</button>
@@ -289,34 +289,68 @@ export function mountSnackDrawer(root, showDetails, readRankings) {
   const shelves = tray.querySelector('.snack-shelves');
   const popularity = tray.querySelector('.snack-popularity');
   const rankingContent = tray.querySelector('.snack-ranking-content');
+  const tabs = [...cabinet.querySelectorAll('[data-pantry-stock]')];
   let opener;
   let moving = false;
-  let rankings;
-  let rankingRequest = false;
+  let archived = false;
+  let warehouse;
+  let warehouseRequest;
+  let products = new Map();
 
-  async function loadRankings() {
-    if (rankingRequest || rankings) return;
-    rankingRequest = true;
-    rankingContent.innerHTML = '<p class="popularity-status" role="status">正在整理零食盤點紀錄…</p>';
-    try {
-      rankings = await readRankings();
-      const initial = rankings.find(group => group.rows.length) ?? rankings[0];
-      const options = rankings.map(({ unit }) => `<option value="${h(unit)}"${unit === initial.unit ? ' selected' : ''}>${h(unit)}</option>`).join('');
-      rankingContent.innerHTML = `${rankings.length > 1 ? `<label class="snack-ranking-unit">依單位 <select>${options}</select></label>` : ''}<div class="snack-ranking-results">${renderSnackRanking(initial)}</div>`;
-      rankingContent.querySelector('select')?.addEventListener('change', event => {
-        rankingContent.querySelector('.snack-ranking-results').innerHTML = renderSnackRanking(rankings.find(group => group.unit === event.target.value));
-      });
-    } catch {
-      rankingContent.innerHTML = '<p class="popularity-status" role="status">排行榜暫時無法讀取。<button type="button" class="text-link">再試一次</button></p>';
-      rankingContent.querySelector('button').addEventListener('click', loadRankings);
-    } finally {
-      rankingRequest = false;
+  function renderRankings() {
+    if (!warehouse) {
+      rankingContent.innerHTML = `<p class="popularity-status" role="status">${warehouseRequest ? '正在讀取零食盤點紀錄…' : '排行榜暫時無法讀取。'}</p>`;
+      return;
     }
+    const rankings = snackDrawerRankings(warehouse);
+    const selected = rankingContent.querySelector('select')?.value;
+    const initial = rankings.find(group => group.unit === selected) ?? rankings.find(group => group.rows.length) ?? rankings[0];
+    const options = rankings.map(({ unit }) => `<option value="${h(unit)}"${unit === initial?.unit ? ' selected' : ''}>${h(unit)}</option>`).join('');
+    rankingContent.innerHTML = `${rankings.length > 1 ? `<label class="snack-ranking-unit">依單位 <select>${options}</select></label>` : ''}<div class="snack-ranking-results">${renderSnackRanking(initial)}</div>`;
+    rankingContent.querySelector('select')?.addEventListener('change', event => {
+      rankingContent.querySelector('.snack-ranking-results').innerHTML = renderSnackRanking(rankings.find(group => group.unit === event.target.value));
+    });
   }
 
   function renderTray() {
-    shelves.innerHTML = snackShelves(search.value, filter.value);
+    if (!warehouse) return;
+    const items = stockDrawerProducts(warehouse.supplies, archived);
+    products = new Map(items.map(product => [product.key, product]));
+    shelves.innerHTML = snackShelves(items, search.value, filter.value);
     tray.scrollTop = 0;
+  }
+
+  function refreshInventory(force = false) {
+    if (warehouseRequest) return warehouseRequest;
+    if (!warehouse) shelves.innerHTML = '<p class="snack-empty" role="status">正在讀取庫存…</p>';
+    warehouseRequest = readWarehouse(force).then(result => {
+      if (!root.isConnected) return;
+      warehouse = result;
+      renderTray();
+      if (popularity.open) renderRankings();
+    }).catch(error => {
+      if (root.isConnected && !warehouse) {
+        shelves.innerHTML = '<p class="snack-empty" role="status">暫時無法讀取庫存。 <button class="text-link" type="button">重新讀取</button></p>';
+        shelves.querySelector('button').addEventListener('click', () => refreshInventory(true).catch(() => {}));
+        rankingContent.innerHTML = '<p class="popularity-status" role="status">排行榜暫時無法讀取。</p>';
+      }
+      throw error;
+    }).finally(() => { warehouseRequest = undefined; });
+    return warehouseRequest;
+  }
+
+  function setArchived(value) {
+    if (value === archived) return;
+    archived = value;
+    search.value = '';
+    filter.value = '';
+    popularity.hidden = archived;
+    for (const tab of tabs) {
+      const selected = (tab.dataset.pantryStock === 'history') === archived;
+      tab.classList.toggle('selected', selected);
+      tab.setAttribute('aria-pressed', String(selected));
+    }
+    renderTray();
   }
 
   async function moveSnackDrawer(open, trigger) {
@@ -325,10 +359,11 @@ export function mountSnackDrawer(root, showDetails, readRankings) {
     for (const button of openers) button.setAttribute('aria-disabled', 'true');
     if (open) {
       opener = trigger;
+      setArchived(false);
+      refreshInventory().catch(() => {});
       room.classList.add('is-pulling');
       await animateSnackPull(room, contents, 0, 1);
       if (!room.isConnected) return;
-      if (!shelves.hasChildNodes()) renderTray();
       room.hidden = true;
       cabinet.hidden = false;
       close.focus({ preventScroll: true });
@@ -349,11 +384,13 @@ export function mountSnackDrawer(root, showDetails, readRankings) {
 
   for (const button of openers) button.addEventListener('click', () => moveSnackDrawer(true, button));
   for (const button of [close, root.querySelector('.snack-drawer-face')]) button.addEventListener('click', () => moveSnackDrawer(false));
+  for (const tab of tabs) tab.addEventListener('click', () => setArchived(tab.dataset.pantryStock === 'history'));
   search.addEventListener('input', renderTray);
   filter.addEventListener('change', renderTray);
-  popularity.addEventListener('toggle', () => { if (popularity.open) loadRankings(); });
+  popularity.addEventListener('toggle', () => { if (popularity.open) renderRankings(); });
   tray.addEventListener('click', event => {
-    const product = productsByKey.get(event.target.closest('[data-snack-product-key]')?.dataset.snackProductKey);
+    const product = products.get(event.target.closest('[data-snack-product-key]')?.dataset.snackProductKey);
     if (product) openDrawerProduct(product, showDetails);
   });
+  return refreshInventory;
 }

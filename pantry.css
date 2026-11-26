@@ -95,7 +95,14 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
 .pantry-heading h1:after{content:"";position:absolute;left:3%;right:1%;bottom:3px;height:4px;background:#dfbb7b;border-radius:60% 25% 65% 30%;transform:rotate(-1deg)}
 .pantry-heading .page-description{font-size:13px;color:#735441;line-height:1.9}
 .fridge-panel>.toolbar{padding:2px 0 18px;border:0;background:#fff;border-radius:0;margin:0;max-width:none}
-.fridge-panel .fridge-browse-label{display:none}
+.fridge-panel > .toolbar .pantry-stock-tabs { flex: 0 0 auto; max-width: none; }
+.pantry-stock-tabs { width: max-content; max-width: 100%; }
+.pantry-stock-tabs .filter-tab, .fridge-panel > .toolbar .pantry-stock-tabs .filter-tab { flex: 1; min-width: 0; min-height: 40px; padding: 7px 12px; font-size: .84rem; }
+.fridge-archive > h2 { margin: 0 0 14px; color: #70523e; font-size: 1.25rem; }
+.fridge-archive .archive-card .form-actions { justify-content: center; }
+.fridge-archive .archive-card { overflow-wrap: anywhere; }
+.fridge-archive .archive-card h3 { font-size: .875rem; line-height: 1.7; }
+.fridge-archive .archive-grid > .subtle { grid-column: 1/-1; }
 .fridge-panel .search-controls{width:100%;gap:13px}
 .fridge-panel .search-field{flex:1;min-width:0}
 .fridge-panel .search-field input{width:100%;font-size:13px;padding:13px 16px 13px 39px;background:#fff;border-color:#bb9578;border-radius:14px 12px 13px 11px}
@@ -316,9 +323,6 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
 .gacha-snack .subtle { margin: 4px 0; }
 .gacha-snack a { display: inline-flex; align-items: center; min-height: 36px; }
 .gacha-retry { margin-top: 8px; min-height: 36px; }
-.archive-tabs { margin: 0 0 20px; }
-.archive-food-card .snack-product-art { margin: 0 auto 12px; height: 110px; align-items: center; }
-.archive-food-card h3 { font-size: .9rem; line-height: 1.65; overflow-wrap: anywhere; }
 @media(max-width:900px){body[data-area=front] nav#navigation{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;overflow:visible}body[data-area=front] nav#navigation a{min-width:0;min-height:44px;white-space:normal;text-align:center}}
 
 .ranking-observation{font-size:11px;color:var(--muted);line-height:1.8;margin:10px 0 0}.ranking-observation small{font-size:10px}@media(max-width:640px){.ranking-observation{grid-column:2;margin:6px 0 0}}
@@ -594,6 +598,7 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
   aspect-ratio: 1;
   filter: none;
 }
+.snack-art-unavailable { align-items: center; color: #816a53; font-size: .75rem; }
 .snack-product-title { font-size: .86rem; font-weight: 650; line-height: 1.45; }
 .snack-product-title small { display: block; margin-top: 3px; color: #735441; font-size: .76rem; font-weight: 450; }
 .snack-shelf-rail {
@@ -637,6 +642,7 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
   .snack-guide-arrow::after { left: -4.7px; width: 8px; height: 8px; }
   .snack-cabinet { padding-inline: 7px; }
   .snack-controls { flex-wrap: wrap; }
+  .snack-controls .pantry-stock-tabs { flex-basis: 100%; }
   .snack-search { flex: 1 1 calc(100% - 115px); }
   .snack-close { min-height: 36px; }
   .snack-open-heading { padding-inline: 3px; }

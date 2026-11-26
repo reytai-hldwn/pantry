@@ -79,7 +79,7 @@ try {
   await page.screenshot({ path: '/tmp/pantry-cache-fixed.png', fullPage: true });
   await page.locator('.fridge-open-guide').click(); await page.waitForSelector('.fridge.is-ready');
   assert.equal(await page.locator('.fridge-product').count(), 32);
-  await page.locator('#navigation [data-view=archive]').click(); await page.waitForSelector('.archive-card');
+  await page.locator('.fridge-panel [data-pantry-stock=history]').click(); await page.waitForSelector('.archive-card');
   assert.equal(await page.locator('.archive-card').count(), 8);
   assert.deepEqual(errors, []);
   console.log('PASS warm cache: old gold CSS/module retained, new release loads matching hand-drawn arrow and cloud; opening/navigation work.');
