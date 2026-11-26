@@ -296,11 +296,29 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
   background: #fffdf7;
   overflow-wrap: anywhere;
 }
+.gacha-snack:has(.gacha-snack-photo:not([hidden])) {
+  display: grid;
+  grid-template-columns: clamp(64px, 19vw, 92px) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(10px, 2.5vw, 18px);
+}
+.gacha-snack-photo .snack-product-art {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  align-items: center;
+}
+.gacha-snack-illustration { margin: 0; text-align: center; color: var(--muted); font-size: .7rem; }
+.gacha-snack-illustration img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; }
+.gacha-snack-illustration figcaption { margin-top: 3px; }
 .gacha-snack .eyebrow { margin: 0 0 4px; }
 .gacha-snack h3 { margin: 0; color: #70523e; font-size: 1.2rem; }
 .gacha-snack .subtle { margin: 4px 0; }
 .gacha-snack a { display: inline-flex; align-items: center; min-height: 36px; }
 .gacha-retry { margin-top: 8px; min-height: 36px; }
+.archive-tabs { margin: 0 0 20px; }
+.archive-food-card .snack-product-art { margin: 0 auto 12px; height: 110px; align-items: center; }
+.archive-food-card h3 { font-size: .9rem; line-height: 1.65; overflow-wrap: anywhere; }
 @media(max-width:900px){body[data-area=front] nav#navigation{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;overflow:visible}body[data-area=front] nav#navigation a{min-width:0;min-height:44px;white-space:normal;text-align:center}}
 
 .ranking-observation{font-size:11px;color:var(--muted);line-height:1.8;margin:10px 0 0}.ranking-observation small{font-size:10px}@media(max-width:640px){.ranking-observation{grid-column:2;margin:6px 0 0}}

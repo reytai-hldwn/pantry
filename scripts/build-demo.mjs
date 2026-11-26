@@ -53,7 +53,7 @@ const previewProductPhotos = productPhotosModule.replace(/"src":("[^"]+")/g, (ma
   const photo = PRODUCT_PHOTOS.find(photo => photo.src === JSON.parse(encoded));
   return photo ? `${match},"displaySrc":${JSON.stringify(photo.displaySrc)}` : match;
 });
-const previewSnackModule = `const previewSnackDrawer = (() => {\n${stripModule(snackCatalog)}\n${stripModule(snackDrawer)}\nreturn { mountSnackDrawer, snackDrawerRankings };\n})();`;
+const previewSnackModule = `const previewSnackDrawer = (() => {\n${stripModule(snackCatalog)}\n${stripModule(snackDrawer)}\nreturn { mountSnackDrawer, snackDrawerRankings, renderGachaSnackArt, mountSupplyArchive };\n})();`;
 const previewApp = stripModule(app).replace("import('./snack-drawer.js')", 'Promise.resolve(previewSnackDrawer)');
 const inline = [stripModule(workdaysModule), stripModule(consumptionIntervalsModule), stripModule(arrivalGuardModule), stripModule(domain), stripModule(coffeeModule), stripModule(drinkAvailabilityModule), stripModule(inventoryActivityModule), stripModule(suppliesModule), stripModule(restockPreferencesModule), stripModule(emptyStockModule), stripModule(consumptionModule), stripModule(catalog), stripModule(previewProductPhotos), 'const h = escapeHtml;', stripModule(wishSupportModule), stripModule(drinkLabelsModule), stripModule(drinkInformationModule), stripModule(fridgeModule), stripModule(consumptionViewModule), stripModule(gachaModule), stripModule(googleWriteModule), stripModule(googleStore), stripModule(store), previewSnackModule, previewApp].join('\n');
 const syntax = spawnSync(process.execPath, ['--check', '--input-type=module'], { input: inline, encoding: 'utf8' });

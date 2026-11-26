@@ -1,6 +1,6 @@
 import { escapeHtml as h, safeUrl } from './domain.js';
 import { buildConsumptionRecords, consumptionPeriod, selectConsumption } from './consumption.js';
-import { SNACK_CATEGORIES, supplyLabel } from './supplies.js';
+import { SNACK_CATEGORIES, supplyLabel, supplyNameKey } from './supplies.js';
 import { SNACK_DRAWER_PRODUCTS } from './snack-drawer-catalog.js';
 
 export const SNACK_DRAWER_SCENE = './assets/snacks/tea-room-drawer.webp';
@@ -11,6 +11,7 @@ const snackDrawerCorners = [[432, 762], [856, 749], [857, 791], [432, 808]];
 const snackDrawerCrop = { x: 432, y: 749, width: 425, height: 59 };
 
 const productsByKey = new Map(SNACK_DRAWER_PRODUCTS.map(product => [product.key, product]));
+const drawerCategories = [...SNACK_CATEGORIES, '泡麵'];
 const normalizeSnackSearch = text => text.normalize('NFKC').toLocaleLowerCase('zh-TW');
 
 function snackProductPhoto(photo, id) {
@@ -21,19 +22,40 @@ function snackProductPhoto(photo, id) {
   return `${clip}<img src="${h(photo.src)}" alt="" loading="lazy" decoding="async"${treatment}>`;
 }
 
-function snackProductCard(product) {
-  const { key, name, flavors, photos, imageCaption, compactPhoto } = product;
+function snackProductArt({ photos, compactPhoto }, outlineId) {
   const classes = ['snack-product-art', photos.length > 1 ? 'is-paired' : '', compactPhoto ? 'is-compact' : ''].filter(Boolean).join(' ');
-  const images = photos.map((photo, index) => snackProductPhoto(photo, `outline-${key}-${index}`)).join('');
+  const images = photos.map((photo, index) => snackProductPhoto(photo, `${outlineId}-${index}`)).join('');
+  return `<span class="${classes}">${images}</span>`;
+}
+
+function findDrawerProduct(item) {
+  const key = supplyNameKey(item);
+  const [name, flavor] = key.split('\u0000');
+  const matches = SNACK_DRAWER_PRODUCTS.filter(product =>
+    (product.category === '泡麵') === (item.kind === 'noodle') &&
+    supplyNameKey({ name: product.name }).split('\u0000')[0] === name);
+  const exact = matches.find(product => [product.flavors, ...product.details.map(detail => detail.flavor)]
+    .some(candidate => supplyNameKey({ name: product.name, flavor: candidate }) === key));
+  return exact || (!flavor && matches.length === 1 ? matches[0] : null);
+}
+
+export function renderGachaSnackArt(snack) {
+  const product = findDrawerProduct(snack);
+  if (product) return snackProductArt(product, `gacha-outline-${product.key}`);
+  return `<figure class="gacha-snack-illustration"><img src="${h(SNACK_DRAWER_CONTENTS)}" alt="" decoding="async"><figcaption>零食示意</figcaption></figure>`;
+}
+
+function snackProductCard(product) {
+  const { key, name, flavors, imageCaption } = product;
   return `<button class="snack-product" type="button" data-snack-product-key="${h(key)}">
-    <span class="${classes}">${images}</span>
+    ${snackProductArt(product, `outline-${key}`)}
     <span class="snack-product-title">${h(name)}${flavors ? `<small>${h(flavors)}</small>` : ''}${imageCaption ? `<small>${h(imageCaption)}</small>` : ''}</span>
   </button>`;
 }
 
 function snackShelves(search, selected) {
   const terms = normalizeSnackSearch(search).trim().split(/\s+/).filter(Boolean);
-  const shelves = SNACK_CATEGORIES.map((category, index) => {
+  const shelves = drawerCategories.map((category, index) => {
     if (selected && selected !== category) return '';
     const items = SNACK_DRAWER_PRODUCTS.filter(product => {
       if (product.category !== category) return false;
@@ -47,7 +69,7 @@ function snackShelves(search, selected) {
       <div class="snack-shelf-rail" aria-hidden="true"></div>
     </section>`;
   }).join('');
-  return shelves || '<p class="snack-empty" role="status">找不到符合的零食。</p>';
+  return shelves || '<p class="snack-empty" role="status">找不到符合的品項。</p>';
 }
 
 function snackNutrition(nutrition) {
@@ -64,6 +86,35 @@ function snackNutrition(nutrition) {
   return `<p>${servingLine}</p><div class="nutrition-table-wrap"><table class="nutrition-table">
     <thead><tr><th scope="col">項目</th><th scope="col">每份${servingEstimated ? '（估算）' : ''}</th><th scope="col">每 100 公克${per100Estimated ? '（估算）' : ''}</th></tr></thead><tbody>${rows}</tbody>
   </table></div>${note ? `<p class="subtle">${h(note)}</p>` : ''}${sourceUrl ? `<p><a href="${h(sourceUrl)}" target="_blank" rel="noopener noreferrer">營養標示來源 ↗</a></p>` : ''}`;
+}
+
+function openDrawerProduct(product, showDetails) {
+  const details = product.details.map(({ flavor, nutrition, ingredients }) => {
+    const ingredientList = ingredients ? `<details><summary>成分</summary><p>${h(ingredients)}</p></details>` : '';
+    return `<section>${flavor ? `<h3>${h(flavor)}</h3>` : ''}${snackNutrition(nutrition)}${ingredientList}</section>`;
+  }).join('');
+  const photoNote = product.photoNote ? `<p class="subtle">${h(product.photoNote)}</p>` : '';
+  showDetails(h(product.name), h(product.category), `<div class="snack-nutrition">${details}${photoNote}</div>`);
+}
+
+export function mountSupplyArchive(root, items, showDetails) {
+  if (!items.length) {
+    root.innerHTML = '<p class="subtle" role="status">目前沒有這類歷史品項。</p>';
+    return;
+  }
+  root.innerHTML = `<div class="archive-grid">${items.map((item, index) => {
+    const product = findDrawerProduct(item);
+    const art = product?.photos.length ? snackProductArt(product, `archive-outline-${index}`) : '';
+    const details = [item.category || '泡麵', item.flavor].filter(Boolean).map(h).join(' · ');
+    return `<article class="panel archive-card archive-food-card" data-archived-supply-id="${h(item.id)}">
+      ${art}<h3>${h(item.name)}</h3><p>${details}</p>
+      ${product ? `<button class="button button-small button-outline" type="button" data-archive-product="${h(product.key)}">查看商品資訊</button>` : ''}
+    </article>`;
+  }).join('')}</div>`;
+  root.addEventListener('click', event => {
+    const product = productsByKey.get(event.target.closest('[data-archive-product]')?.dataset.archiveProduct);
+    if (product) openDrawerProduct(product, showDetails);
+  });
 }
 
 function snackDrawerPath(context, points) {
@@ -207,8 +258,8 @@ export function mountSnackDrawer(root, showDetails, readRankings) {
     <section class="snack-cabinet" id="snack-cabinet" aria-label="抽屜內的零食" hidden>
       <header class="snack-open-heading pantry-heading"><h2>今天，吃點什麼</h2><p class="page-description">想吃點鹹的，還是來點甜的？挑一份喜歡的零食，休息一下。</p></header>
       <div class="snack-controls">
-        <label class="snack-search"><span aria-hidden="true">⌕</span><input type="search" maxlength="80" aria-label="搜尋零食品名或口味" placeholder="搜尋品名或口味"></label>
-        <select aria-label="篩選零食小類"><option value="">全部小類</option>${SNACK_CATEGORIES.map(category => `<option value="${h(category)}">${h(category)}</option>`).join('')}</select>
+        <label class="snack-search"><span aria-hidden="true">⌕</span><input type="search" maxlength="80" aria-label="搜尋零食或泡麵" placeholder="搜尋品名或口味"></label>
+        <select aria-label="篩選零食小類"><option value="">全部小類</option>${drawerCategories.map(category => `<option value="${h(category)}">${h(category)}</option>`).join('')}</select>
         <button class="button button-small button-outline snack-close" type="button">推回抽屜</button>
       </div>
       <div class="snack-tray" role="region" aria-label="零食分類" tabindex="0">
@@ -303,12 +354,6 @@ export function mountSnackDrawer(root, showDetails, readRankings) {
   popularity.addEventListener('toggle', () => { if (popularity.open) loadRankings(); });
   tray.addEventListener('click', event => {
     const product = productsByKey.get(event.target.closest('[data-snack-product-key]')?.dataset.snackProductKey);
-    if (!product) return;
-    const details = product.details.map(({ flavor, nutrition, ingredients }) => {
-      const ingredientList = ingredients ? `<details><summary>成分</summary><p>${h(ingredients)}</p></details>` : '';
-      return `<section>${flavor ? `<h3>${h(flavor)}</h3>` : ''}${snackNutrition(nutrition)}${ingredientList}</section>`;
-    }).join('');
-    const photoNote = product.photoNote ? `<p class="subtle">${h(product.photoNote)}</p>` : '';
-    showDetails(h(product.name), h(product.category), `<div class="snack-nutrition">${details}${photoNote}</div>`);
+    if (product) openDrawerProduct(product, showDetails);
   });
 }

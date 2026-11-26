@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {GACHA_FORTUNES,gachaDay,gachaResetDelay,drawGacha,readDailyGacha,saveDailyGacha,chooseGachaDrink,chooseGachaSnack,renderGacha,gachaFlightKeyframes} from '../js/gacha.js';
 import {websiteBackend} from './helpers/google-website.mjs';
 import {GoogleInventoryStore,normalizeGooglePublicData} from '../js/google-store.js';
+import {renderGachaSnackArt} from '../js/snack-drawer.js';
 const storage=()=>{const m=new Map();return{getItem:key=>m.get(key)||null,setItem:(key,value)=>m.set(key,value)};};
 const plain=value=>JSON.parse(JSON.stringify(value));
 const config={googleScriptUrl:'https://script.google.com/macros/s/GACHA_TEST/exec'};
@@ -82,6 +83,16 @@ test('the daily snack uses active stock and extends a saved drink and fortune wi
 
  saveDailyGacha(local, 'daily', { ...draw, snack: { ...draw.snack, id: '<invalid>' } });
  assert.deepEqual(readDailyGacha(local, 'daily', now), { ...legacyDraw, snack: null });
+});
+
+test('recommendation art matches the flavor and handles saved aliases, shared packaging and missing photos', () => {
+ assert.match(renderGachaSnackArt({name:'多力多滋',flavor:'香菜'}), /snack-001-1-/);
+ assert.match(renderGachaSnackArt({name:'多力多滋雙倍起司口味',flavor:''}), /snack-000-1-/);
+ const chocolates = renderGachaSnackArt({name:'義美QQ糖巧克球（量販包）',flavor:''});
+ assert.match(chocolates,/snack-092-1-/);
+ assert.match(chocolates,/clip-path:url\(#gacha-outline-snack-092-0\)/);
+ assert.match(renderGachaSnackArt({name:'Bisco乳酸菌餅乾',flavor:'牛奶'}), /is-paired/);
+ assert.match(renderGachaSnackArt({name:'卡迪那95℃薯條',flavor:'柚子胡椒風味'}), /tea-room-drawer-contents.*零食示意/);
 });
 
 test('read options are gated on deployment, deduplicate in-flight reads and validate the minimal response',async()=>{

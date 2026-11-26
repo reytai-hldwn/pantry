@@ -127,7 +127,7 @@ function gachaMachine(disabled,phase) {
 function renderGachaSnack(snack, { loading, snackState }) {
   if (snack) {
     const details = [snack.category, snack.flavor].filter(Boolean).map(h).join(' · ');
-    return `<section class="gacha-snack"><p class="eyebrow">今日推薦零食</p><h3>${h(snack.name)}</h3><p class="subtle">${details}</p><a class="text-link" href="#snack-drawer">逛逛零食抽屜 ↗</a></section>`;
+    return `<section class="gacha-snack"><div class="gacha-snack-photo" data-gacha-snack-photo hidden></div><div><p class="eyebrow">今日推薦零食</p><h3>${h(snack.name)}</h3><p class="subtle">${details}</p><a class="text-link" href="#snack-drawer">逛逛零食抽屜 ↗</a></div></section>`;
   }
   const message = loading ? '正在找今天的零食…' : {
     empty: '目前沒有可推薦的零食，補給到貨後再來看看。',

@@ -35,6 +35,8 @@ viewNames['snack-drawer'] = '零食抽屜';
 viewNames['restock-coffee'] = '到貨入庫 · 咖啡豆';
 const adminViews = new Set(['admin', 'consumption', 'products', 'count', ...Object.keys(restockViews), 'manage-wishes', 'history']);
 let view = 'overview';
+const archiveKinds = { drink: '飲料', snack: '零食', noodle: '泡麵' };
+let archiveKind = 'drink';
 let wishFilter = 'all';
 const wishKind = (wish) => wish?.kind === 'snack' ? 'snack' : 'drink';
 const wishKindLabel = (kind) => kind === 'snack' ? '零食' : '飲料';
@@ -204,6 +206,8 @@ function renderOverview() {
   renderInventoryTable();
 }
 
+const loadSnackDrawerModule = () => import('./snack-drawer.js');
+
 function renderSnackDrawer() {
   if (main.firstElementChild?.classList.contains('snack-drawer')) return;
   const root = document.createElement('div');
@@ -211,7 +215,7 @@ function renderSnackDrawer() {
   const load = async () => {
     root.innerHTML = '<div class="loading-state" role="status"><span class="loader"></span><p>正在開啟零食抽屜…</p></div>';
     try {
-      const { mountSnackDrawer, snackDrawerRankings } = await import('./snack-drawer.js');
+      const { mountSnackDrawer, snackDrawerRankings } = await loadSnackDrawerModule();
       if (root.isConnected) mountSnackDrawer(root, showModal, async () => {
         const source = store.mode === 'google' ? (await store.fetchWarehouseSnapshot()).result : store;
         return snackDrawerRankings(source);
@@ -470,13 +474,37 @@ async function loadFridgePopularity() {
   finally { popularityLoading = false; update(); }
 }
 
-function renderArchive() {
+function renderArchive(focusTab = false) {
+  const tabs = Object.entries(archiveKinds).map(([kind, label]) =>
+    `<button type="button" class="filter-tab${kind === archiveKind ? ' selected' : ''}" data-action="archive-kind" data-id="${kind}" aria-pressed="${kind === archiveKind}">${label}</button>`).join('');
+  main.innerHTML = heading('ONCE IN OUR PANTRY', '那些曾經吃/喝過的', '這裡收著茶水間曾經供應的飲料、零食和泡麵。') +
+    `<div class="filter-tabs archive-tabs" role="group" aria-label="歷史品項分類">${tabs}</div><div id="archive-items"></div>`;
+  if (focusTab) main.querySelector('.archive-tabs [aria-pressed="true"]').focus({ preventScroll: true });
+  const target = main.querySelector('#archive-items');
+  if (archiveKind !== 'drink') {
+    loadSupplyArchive(target, archiveKind);
+    return;
+  }
   const archived = store.data.drinks.filter((drink) => drink.active === false);
-  main.innerHTML = heading('ONCE IN OUR PANTRY', '那些曾經喝過的', '曾經買過、目前暫停供應的飲料。還想喝的話，留下你的回購願望。') +
-    `<div class="archive-grid">${archived.length ? archived.map((drink) => {
+  target.innerHTML = `<div class="archive-grid">${archived.length ? archived.map((drink) => {
       const wish=store.data.wishes.find(item=>item.sourceDrinkId===drink.id),voted=wish&&store.hasVoted(wish.id);
       return `<article class="panel archive-card" data-archived-drink-id="${h(drink.id)}">${drinkPack(drink)}<h2>${h(drink.name)}</h2><p>${h(drink.category)} · ${h(drink.packaging || drink.unit)}</p><span class="pill pill-muted">歷史品項</span><div class="form-actions">${button('查看飲料資訊', 'view-drink', `type="button" data-id="${h(drink.id)}"`, 'button-small button-outline')}</div><div class="archive-wish-actions"><button type="button" class="wish-vote-button${voted?' is-voted':''}" data-action="archive-wish" data-id="${h(drink.id)}" aria-pressed="${!!voted}"${voted||!store.supportsArchiveWishes?' disabled':''}>${voted?'♥ 已記下你的回購願望':'♡ 我還想喝，希望有機會可以再買'}</button>${wish?`<button type="button" class="wish-vote-count" data-action="view-wish-supporters" data-id="${h(wish.id)}">${wish.votes||0} 人還想喝</button>`:''}${!store.supportsArchiveWishes?'<small class="subtle">更新 Google 部署後即可登記回購願望。</small>':''}</div></article>`;
     }).join('') : `<div class="panel">${empty('每一款喜歡，都值得被記得', '品項停買後會收進這裡，不會刪掉以前的紀錄。')}</div>`}</div>`;
+}
+
+async function loadSupplyArchive(target, kind, force = false) {
+  target.innerHTML = '<p class="subtle" role="status">正在讀取歷史品項…</p>';
+  try {
+    const [{ mountSupplyArchive }, supplies] = await Promise.all([
+      loadSnackDrawerModule(),
+      store.mode === 'google' ? store.fetchWarehouseSnapshot(force).then(({ result }) => result.supplies) : supplyItems(),
+    ]);
+    if (target.isConnected) mountSupplyArchive(target, supplies.filter(item => item.kind === kind && item.active === false), showModal);
+  } catch {
+    if (!target.isConnected) return;
+    target.innerHTML = '<p class="subtle" role="status">暫時無法讀取歷史品項。 <button class="text-link" type="button">重新讀取</button></p>';
+    target.querySelector('button').addEventListener('click', () => loadSupplyArchive(target, kind, true));
+  }
 }
 
 function renderGoogleLink(url, label) {
@@ -783,6 +811,16 @@ function renderGachaPage(){
   const state=currentGacha();
   const description=store.supportsGacha ? '轉一顆扭蛋，抽出今天的飲料和零食。' : '幸運籤先開放試玩，補給推薦準備中。';
   main.innerHTML=heading('A LITTLE LUCK, ON THE HOUSE','今日補給扭蛋',description)+renderGacha(state,store.data.drinks);
+  const snackPhoto = main.querySelector('[data-gacha-snack-photo]');
+  if (snackPhoto) {
+    const snack = state.draw.snack;
+    loadSnackDrawerModule().then(({ renderGachaSnackArt }) => {
+      if (!snackPhoto.isConnected) return;
+      snackPhoto.innerHTML = renderGachaSnackArt(snack);
+      snackPhoto.hidden = false;
+      positionGachaNote();
+    }).catch(() => {});
+  }
   positionGachaNote();
   if (!state.draw || state.loading) return;
   const shouldLoad = (selection, status) => !selection && (status === 'idle' || (status === 'pending' && store.supportsGacha));
@@ -890,7 +928,7 @@ async function route() {
     return;
   }
   if(nextView==='products'&&view!=='products'){filter=warehouseArchiveShortcut?'archived':'all';warehouseArchiveShortcut=false;supplyFilter=filter==='archived'?'archived':'all';query='';category='';supplyQuery='';supplyCategory='';supplyProduct='';}
-  if (view === 'snack-drawer' && nextView !== view && modal.open) modal.close();
+  if ((view === 'snack-drawer' || view === 'archive') && nextView !== view && modal.open) modal.close();
   view = nextView;
   const sequence = ++routeSequence;
   if(store.mode==='google'&&view!=='admin')store.cancelOtherViewReads(adminViews.has(view));
@@ -1289,6 +1327,13 @@ async function runAction(action, id) {
   }
   if (action === 'quick-add-drink') { if(store.mode==='google'&&!store.googleViewLoaded)await store.readPublic(); if(view!=='admin'&&view!=='products')return;openQuickDrink(); return; }
   if (action === 'retry-admin-summary') { store.adminSummaryReadAt=-Infinity;loadAdminSummary({force:true});return; }
+  if (action === 'archive-kind') {
+    if (view === 'archive' && Object.hasOwn(archiveKinds, id) && archiveKind !== id) {
+      archiveKind = id;
+      renderArchive(true);
+    }
+    return;
+  }
   if (action === 'archive-wish') {
     const drink=store.data.drinks.find(item=>item.id===id&&item.active===false);if(!drink)throw new Error('找不到這個歷史品項。');
     showModal('這款，我還想喝',`留下姓名，讓採買時知道大家還想喝「${h(drink.name)}」。`, `<form id="archive-wish-form" data-id="${h(id)}"><label class="field">姓名<input name="voterName" required maxlength="80" autocomplete="name"></label><div class="form-actions">${button('取消','close-modal','type="button"','button-outline')}<button type="submit" class="button">送出回購願望</button></div></form>`);return;
@@ -1405,7 +1450,7 @@ document.addEventListener('click', (event) => {
   const action = event.target.closest('[data-action]');
   if (action) {
     event.preventDefault();
-    if (['coffee-arrival','coffee-count','gacha-draw','gacha-replay','gacha-retry','count-kind','batch-arrival','batch-add','batch-remove','snack-details','open-empty-stock','open-snack-stock','snack-new','retry-admin-summary','archive-wish','supply-stock-filter','supply-expiry-set','supply-expiry-add','supply-expiry-remove','warehouse-kind','supply-arrival','supply-count','supply-count-kind','supply-expiry-close','close-modal', 'quick-add-drink', 'new-drink', 'new-wish', 'edit-drink', 'edit-wish', 'vote-wish', 'view-wish-supporters', 'view-drink-label', 'login', 'view-drink', 'toggle-door', 'retry-popularity', 'retry-route'].includes(action.dataset.action)) {
+    if (['coffee-arrival','coffee-count','gacha-draw','gacha-replay','gacha-retry','count-kind','batch-arrival','batch-add','batch-remove','snack-details','open-empty-stock','open-snack-stock','snack-new','retry-admin-summary','archive-kind','archive-wish','supply-stock-filter','supply-expiry-set','supply-expiry-add','supply-expiry-remove','warehouse-kind','supply-arrival','supply-count','supply-count-kind','supply-expiry-close','close-modal', 'quick-add-drink', 'new-drink', 'new-wish', 'edit-drink', 'edit-wish', 'vote-wish', 'view-wish-supporters', 'view-drink-label', 'login', 'view-drink', 'toggle-door', 'retry-popularity', 'retry-route'].includes(action.dataset.action)) {
       if (!busy) runAction(action.dataset.action, action.dataset.id).catch((error) => toast(error.message, true));
     } else withBusy(() => runAction(action.dataset.action, action.dataset.id), action);
   }
