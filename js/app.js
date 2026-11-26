@@ -4,7 +4,7 @@ import { largeDrinkArrivals } from './arrival-guard.js';
 import { escapeHtml as h, safeUrl, uid, number, restockQuantity, stocktakeQuantities, getConsumption, getWeeklyPopularity } from './domain.js';
 import { InventoryStore } from './store.js';
 import { CATEGORIES_ORDER, DEFAULT_CASE_SIZE } from './catalog.js';
-import { drinkPack, renderFridge, renderFridgePopularity, renderPantryStockTabs, syncFridgeDoor, syncFridgeScene } from './fridge.js';
+import { drinkPack, renderFridge, renderFridgePopularity, renderPantryStockTabs, renderPantryCategoryBar, selectPantryCategory, syncFridgeDoor, syncFridgeScene } from './fridge.js';
 import { GoogleInventoryStore } from './google-store.js';
 import { archivedFoodWishId, wishSupportDetails, wishSupportPreview, wishVoterName, WISH_PRODUCT_KINDS, wishWarehouseProducts } from './wish-support.js';
 import { renderDrinkInformation } from './drink-information.js';
@@ -200,8 +200,10 @@ function forecast(drink) {
 
 function inventoryToolbar(warehouse = false) {
   const itemTypes = warehouse ? '飲料' : '飲料或冰品';
-  const filterCategories = warehouse ? categoryNames() : [...new Set([...categoryNames(), '冰品'])];
-  return `<div class="toolbar">${warehouse ? `<div class="filter-tabs" role="group" aria-label="倉庫篩選">${[['low', '庫存量少'], ['all', '供應中'], ['archived', '歷史品項']].map(([value, label]) => `<button class="filter-tab ${filter === value ? 'selected' : ''}" data-filter="${value}" aria-pressed="${filter === value}">${label}</button>`).join('')}</div>` : renderPantryStockTabs(fridgeHistory)}<div class="search-controls"><label class="search-field"><span aria-hidden="true">⌕</span><input id="search" type="search" maxlength="80" placeholder="找找${itemTypes}…" aria-label="搜尋${itemTypes}" value="${h(query)}"></label><select id="category-filter" aria-label="篩選${itemTypes}分類"><option value="">所有分類</option>${filterCategories.map((name) => `<option value="${h(name)}"${category === name ? ' selected' : ''}>${h(name)}</option>`).join('')}</select></div></div>`;
+  const categories = categoryNames();
+  return `<div class="toolbar">${warehouse ? `<div class="filter-tabs" role="group" aria-label="倉庫篩選">${[['low', '庫存量少'], ['all', '供應中'], ['archived', '歷史品項']].map(([value, label]) => `<button class="filter-tab ${filter === value ? 'selected' : ''}" data-filter="${value}" aria-pressed="${filter === value}">${label}</button>`).join('')}</div>` : renderPantryStockTabs(fridgeHistory)}
+    <div class="search-controls"><label class="search-field"><span aria-hidden="true">⌕</span><input id="search" type="search" maxlength="80" placeholder="找找${itemTypes}…" aria-label="搜尋${itemTypes}" value="${h(query)}"></label>${warehouse ? `<select id="category-filter" aria-label="篩選飲料分類"><option value="">所有分類</option>${categories.map(name => `<option value="${h(name)}"${category === name ? ' selected' : ''}>${h(name)}</option>`).join('')}</select>` : ''}</div>
+    ${warehouse ? '' : renderPantryCategoryBar([...new Set([...categories, '冰品'])], category, '飲料與冰品分類')}</div>`;
 }
 
 function renderOverview() {
@@ -788,47 +790,113 @@ function bindPurchasedWishes(wishes) {
   const section = list.parentElement;
   const nav = section.querySelector('.purchased-wishes-nav');
   const [previous, next] = nav.querySelectorAll('button');
+  const tiles = [...list.children];
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const controller = new AbortController();
   const { signal } = controller;
-  let timer;
-  let dragging = false;
+  let copies = [];
+  let cycleWidth = 0;
+  let cardStep = 0;
+  let position = 0;
+  let lastFrame;
+  let frame;
+  let manualTimer;
+  let touching = false;
   let visible = false;
 
-  function move(direction) {
-    const limit = list.scrollWidth - list.clientWidth;
-    if (limit < 2) return;
-    const step = list.children[1].offsetLeft - list.children[0].offsetLeft;
-    const wrap = direction > 0 ? list.scrollLeft >= limit - 2 : list.scrollLeft < 2;
-    const left = wrap ? (direction > 0 ? 0 : limit) : list.scrollLeft + direction * step;
-    list.scrollTo({ left, behavior: wrap || reducedMotion.matches ? 'instant' : 'smooth' });
+  function animate(now) {
+    if (lastFrame !== undefined) {
+      const elapsed = Math.min(now - lastFrame, 50);
+      position = (position + cardStep * elapsed / 1000) % cycleWidth;
+      list.scrollLeft = position;
+    }
+    lastFrame = now;
+    frame = requestAnimationFrame(animate);
   }
 
   function sync() {
-    clearInterval(timer);
-    nav.hidden = list.scrollWidth - list.clientWidth < 2;
-    if (nav.hidden || reducedMotion.matches || document.hidden || !visible || dragging || section.querySelector(':focus-visible')) return;
-    timer = setInterval(() => move(1), 1000);
+    cancelAnimationFrame(frame);
+    lastFrame = undefined;
+    if (signal.aborted || !cycleWidth || document.hidden || !visible || touching || manualTimer !== undefined || section.querySelector(':focus-visible')) return;
+    position = list.scrollLeft % cycleWidth;
+    frame = requestAnimationFrame(animate);
   }
 
-  previous.addEventListener('click', () => { move(-1); sync(); }, { signal });
-  next.addEventListener('click', () => { move(1); sync(); }, { signal });
-  list.addEventListener('wheel', sync, { passive: true, signal });
-  list.addEventListener('touchstart', () => { dragging = true; sync(); }, { passive: true, signal });
+  function measure() {
+    const width = tiles.at(-1).offsetLeft + tiles.at(-1).offsetWidth - tiles[0].offsetLeft;
+    nav.hidden = width <= list.clientWidth;
+    const looping = !nav.hidden && !reducedMotion.matches;
+    if (looping && !copies.length) {
+      // Include the first card once more so the right arrow can move a full
+      // card across the seam, even if almost every original card fits.
+      copies = [...tiles, tiles[0]].map((tile, index) => {
+        const copy = tile.cloneNode(true);
+        copy.removeAttribute('data-purchased-wish-id');
+        copy.setAttribute('aria-hidden', 'true');
+        copy.querySelector('a')?.setAttribute('tabindex', '-1');
+        copy.querySelector('[data-purchased-snack-art] .snack-product-art')?.remove();
+        hydratePurchasedWishArt(copy, wishes[index % tiles.length], `purchased-loop-outline-${index}`);
+        return copy;
+      });
+      list.append(...copies);
+    } else if (!looping && copies.length) {
+      const equivalent = cycleWidth ? list.scrollLeft % cycleWidth : list.scrollLeft;
+      for (const copy of copies) copy.remove();
+      copies = [];
+      list.scrollLeft = equivalent;
+    }
+    list.classList.toggle('is-looping', looping);
+    cycleWidth = looping ? copies[0].offsetLeft - tiles[0].offsetLeft : 0;
+    cardStep = tiles.length > 1 ? tiles[1].offsetLeft - tiles[0].offsetLeft : 0;
+    sync();
+  }
+
+  function resumeAfter(delay) {
+    clearTimeout(manualTimer);
+    manualTimer = setTimeout(() => { manualTimer = undefined; sync(); }, delay);
+    sync();
+  }
+
+  function move(direction) {
+    if (nav.hidden) return;
+    if (cycleWidth) {
+      let left = list.scrollLeft % cycleWidth;
+      if (left + direction * cardStep < 0) left += cycleWidth;
+      resumeAfter(500);
+      list.scrollTo({ left, behavior: 'instant' });
+      list.scrollTo({ left: left + direction * cardStep, behavior: 'smooth' });
+      return;
+    }
+    const limit = list.scrollWidth - list.clientWidth;
+    const wrap = direction > 0 ? list.scrollLeft >= limit - 2 : list.scrollLeft < 2;
+    const left = wrap ? (direction > 0 ? 0 : limit) : list.scrollLeft + direction * cardStep;
+    list.scrollTo({ left, behavior: 'instant' });
+  }
+
+  previous.addEventListener('click', () => move(-1), { signal });
+  next.addEventListener('click', () => move(1), { signal });
+  list.addEventListener('wheel', () => resumeAfter(650), { passive: true, signal });
+  list.addEventListener('touchstart', () => { touching = true; sync(); }, { passive: true, signal });
   for (const event of ['touchend', 'touchcancel']) list.addEventListener(event, e => {
-    if (!e.touches.length) { dragging = false; sync(); }
+    if (!e.touches.length) { touching = false; resumeAfter(650); }
   }, { passive: true, signal });
   section.addEventListener('focusin', sync, { signal });
   section.addEventListener('focusout', () => queueMicrotask(sync), { signal });
   document.addEventListener('visibilitychange', sync, { signal });
-  reducedMotion.addEventListener('change', sync, { signal });
-  const resize = new ResizeObserver(sync);
+  reducedMotion.addEventListener('change', measure, { signal });
+  const resize = new ResizeObserver(measure);
   resize.observe(list);
   const intersection = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; sync(); });
   intersection.observe(section);
-  disposePurchasedWishCarousel = () => { clearInterval(timer); controller.abort(); resize.disconnect(); intersection.disconnect(); };
-  [...list.children].forEach((tile, index) => hydratePurchasedWishArt(tile, wishes[index], `purchased-outline-${index}`));
-  sync();
+  disposePurchasedWishCarousel = () => {
+    cancelAnimationFrame(frame);
+    clearTimeout(manualTimer);
+    controller.abort();
+    resize.disconnect();
+    intersection.disconnect();
+  };
+  measure();
+  tiles.forEach((tile, index) => hydratePurchasedWishArt(tile, wishes[index], `purchased-outline-${index}`));
 }
 
 function renderWishes() {
@@ -1795,6 +1863,13 @@ document.addEventListener('click', (event) => {
       renderOverview();
       $('.fridge-panel [data-pantry-stock][aria-pressed="true"]')?.focus({ preventScroll: true });
     }
+  }
+  const categoryButton = event.target.closest('.fridge-panel [data-pantry-category]');
+  if (categoryButton && !busy && fridgeOpen && view === 'overview' && categoryButton.dataset.pantryCategory !== category) {
+    category = categoryButton.dataset.pantryCategory;
+    inputSequence++;
+    selectPantryCategory(categoryButton.parentElement, category);
+    renderInventoryTable();
   }
   const tab = event.target.closest('[data-filter]');
   if (tab && !busy) {

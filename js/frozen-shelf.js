@@ -31,7 +31,7 @@ export const FROZEN_PRODUCTS = [
   {
     name: 'Poki巧克力脆皮雪糕',
     aliases: ['Poki巧克力脆皮大雪糕', '百吉巧克力脆皮大雪糕', '百吉脆皮巧克力'],
-    photo: './assets/frozen/poki-chocolate.webp',
+    photo: './assets/frozen/poki-chocolate-wrapper.webp',
     photoNote: '商品圖依提供的包裝照片重製。',
     allergens: '牛奶、花生、大豆、堅果類。',
     nutrition: frozenNutrition(70, [147.3, 1.4, 8, 7.3, 0, 17.4, 14.3, 64], [210.4, 2, 11.4, 10.4, 0, 24.9, 20.4, 91], '一盒含 5 份。依提供的包裝營養標示。'),
@@ -46,7 +46,7 @@ export const FROZEN_PRODUCTS = [
   {
     name: '杜老爺甜筒',
     aliases: ['杜老爺高級甜筒'],
-    photo: './assets/frozen/duroyal-cone.webp',
+    photo: './assets/frozen/duroyal-cone-upright.webp',
     source: 'https://www.momoshop.com.tw/TP/TP0007568/goodsDetail/TP00075680000469',
     ingredients: '水、蔗糖、巧克力液［椰子油、蔗糖、乳糖、可可粉、可可膏、全脂奶粉、大豆卵磷脂、巧克力香料（丙二醇、乙醇、水、甘油、香料）、香莢蘭醛］、麵粉、麥芽糖、完全氫化椰子油、花生碎角、乳清粉、脫脂奶粉、軟質棕油、複方粘稠劑（脂肪酸甘油酯、關華豆膠、刺槐豆膠、鹿角菜膠）、大豆卵磷脂、複方香料（丙二醇、水、乙醇、焦糖色素、食用黃色四號、食用紅色六號、蔗糖、甘油、玉米糖膠、葡萄糖、糊精、香料）、刺槐豆膠、精鹽、鹿角菜膠、焦糖色素、食用黃色四號、食用黃色五號。',
     allergens: '本產品含牛奶、含麩質穀物、大豆、花生及其製品。生產線設備亦有處理芒果、蛋、堅果類、芝麻及其製品。',

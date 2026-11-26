@@ -3,7 +3,7 @@ import { renderFoodNutrition } from './food-nutrition.js';
 import { buildConsumptionRecords, consumptionPeriod, selectConsumption } from './consumption.js';
 import { SNACK_CATEGORIES, supplyLabel, supplyNameKey } from './supplies.js';
 import { SNACK_DRAWER_PRODUCTS } from './snack-drawer-catalog.js';
-import { renderPantryStockTabs } from './fridge.js';
+import { renderPantryStockTabs, renderPantryCategoryBar, selectPantryCategory } from './fridge.js';
 import { archivedFoodWishId } from './wish-support.js';
 import { snackDrawerCorners, snackDrawerCrop } from './snack-room.js';
 
@@ -249,9 +249,9 @@ export function mountSnackDrawer(root, showDetails, readWarehouse, historyAction
       <div class="snack-controls">
         ${renderPantryStockTabs()}
         <label class="snack-search"><span aria-hidden="true">⌕</span><input type="search" maxlength="80" aria-label="搜尋零食或泡麵" placeholder="搜尋品名或口味"></label>
-        <select aria-label="篩選零食小類"><option value="">全部小類</option>${drawerCategories.map(category => `<option value="${h(category)}">${h(category)}</option>`).join('')}</select>
         <button class="button button-small button-outline snack-close" type="button">推回抽屜</button>
       </div>
+      ${renderPantryCategoryBar(drawerCategories, '', '零食與泡麵分類')}
       <p class="snack-inventory-status subtle" role="status" hidden></p>
       <div class="snack-tray" role="region" aria-label="零食分類" tabindex="0">
         <details class="snack-popularity">
@@ -275,7 +275,7 @@ export function mountSnackDrawer(root, showDetails, readWarehouse, historyAction
   const cabinet = root.querySelector('.snack-cabinet');
   const close = root.querySelector('.snack-close');
   const search = root.querySelector('.snack-search input');
-  const filter = root.querySelector('.snack-controls select');
+  const categoryBar = cabinet.querySelector('.pantry-category-bar');
   const tray = root.querySelector('.snack-tray');
   const shelves = tray.querySelector('.snack-shelves');
   const status = cabinet.querySelector('.snack-inventory-status');
@@ -285,6 +285,7 @@ export function mountSnackDrawer(root, showDetails, readWarehouse, historyAction
   let opener;
   let moving = false;
   let archived = false;
+  let selectedCategory = '';
   let warehouse = preview;
   let warehouseIsPreview = Boolean(preview);
   let lastReadAt = -Infinity;
@@ -310,7 +311,7 @@ export function mountSnackDrawer(root, showDetails, readWarehouse, historyAction
     if (!warehouse || cabinet.hidden) return;
     const items = stockDrawerProducts(warehouse.supplies, archived);
     products = new Map(items.map(product => [product.key, product]));
-    shelves.innerHTML = snackShelves(items, search.value, filter.value, archived && (product => historyActions(product, warehouse.data?.wishes || [])));
+    shelves.innerHTML = snackShelves(items, search.value, selectedCategory, archived && (product => historyActions(product, warehouse.data?.wishes || [])));
     tray.scrollTop = 0;
   }
 
@@ -345,7 +346,9 @@ export function mountSnackDrawer(root, showDetails, readWarehouse, historyAction
     if (value === archived) return;
     archived = value;
     search.value = '';
-    filter.value = '';
+    selectedCategory = '';
+    selectPantryCategory(categoryBar, selectedCategory);
+    categoryBar.scrollLeft = 0;
     popularity.hidden = archived;
     for (const tab of tabs) {
       const selected = (tab.dataset.pantryStock === 'history') === archived;
@@ -389,7 +392,13 @@ export function mountSnackDrawer(root, showDetails, readWarehouse, historyAction
   for (const button of [close, root.querySelector('.snack-drawer-face')]) button.addEventListener('click', () => moveSnackDrawer(false));
   for (const tab of tabs) tab.addEventListener('click', () => setArchived(tab.dataset.pantryStock === 'history'));
   search.addEventListener('input', renderTray);
-  filter.addEventListener('change', renderTray);
+  categoryBar.addEventListener('click', event => {
+    const button = event.target.closest('[data-pantry-category]');
+    if (!button || button.dataset.pantryCategory === selectedCategory) return;
+    selectedCategory = button.dataset.pantryCategory;
+    selectPantryCategory(categoryBar, selectedCategory);
+    renderTray();
+  });
   popularity.addEventListener('toggle', () => { if (popularity.open) renderRankings(); });
   tray.addEventListener('click', event => {
     const product = products.get(event.target.closest('[data-snack-product-key]')?.dataset.snackProductKey);

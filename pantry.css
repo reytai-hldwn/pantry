@@ -94,7 +94,7 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
 .pantry-heading h1{position:relative;display:table;font-size:clamp(32px,3.3vw,48px);font-weight:700;line-height:1.6;letter-spacing:2px;margin:0 0 8px;transform:rotate(-1deg)}
 .pantry-heading h1:after{content:"";position:absolute;left:3%;right:1%;bottom:3px;height:4px;background:#dfbb7b;border-radius:60% 25% 65% 30%;transform:rotate(-1deg)}
 .pantry-heading .page-description{font-size:13px;color:#735441;line-height:1.9}
-.fridge-panel>.toolbar{padding:2px 0 18px;border:0;background:#fff;border-radius:0;margin:0;max-width:none}
+.fridge-panel>.toolbar{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px 14px;padding:2px 0 18px;border:0;background:#fff;border-radius:0;margin:0;max-width:none}
 .fridge-panel > .toolbar .pantry-stock-tabs { flex: 0 0 auto; max-width: none; }
 .pantry-stock-tabs { width: max-content; max-width: 100%; }
 .pantry-stock-tabs .filter-tab, .fridge-panel > .toolbar .pantry-stock-tabs .filter-tab { flex: 1; min-width: 0; min-height: 40px; padding: 7px 12px; font-size: .84rem; }
@@ -107,7 +107,34 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
 .fridge-panel .search-field{flex:1;min-width:0}
 .fridge-panel .search-field input{width:100%;font-size:13px;padding:13px 16px 13px 39px;background:#fff;border-color:#bb9578;border-radius:14px 12px 13px 11px}
 .fridge-panel .search-field>span{top:10px;left:14px;font-size:23px;line-height:24px;color:#67412e}
-.fridge-panel #category-filter{width:180px;max-width:none;padding:13px;background:#fff;border-color:#bb9578;color:#67412e;font-size:13px;border-radius:12px 14px 11px 13px}
+.pantry-category-bar {
+  display: flex;
+  gap: 7px;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 3px 3px 7px;
+  scrollbar-width: thin;
+  scrollbar-color: #c8ad8d transparent;
+}
+.fridge-panel .pantry-category-bar { grid-column: 1 / -1; }
+.pantry-category-button {
+  flex: none;
+  min-height: 38px;
+  padding: 6px 13px;
+  border: 1px solid #e0cbb3;
+  border-radius: 8px;
+  background: #fffdfa;
+  color: #70523e;
+  font-size: .84rem;
+  white-space: nowrap;
+}
+.pantry-category-button:hover { border-color: #a98461; }
+.pantry-category-button[aria-pressed="true"] {
+  border-color: #ae835d;
+  background: #f1e5d3;
+  color: #543728;
+  font-weight: 600;
+}
 .pantry-stage{position:relative;isolation:isolate;width:100%;aspect-ratio:1074/560;overflow:hidden;background:#fff;border:1px solid #e1cbb1;border-radius:3px}
 .pantry-room{position:absolute;inset:0;z-index:2;transform-origin:33% 50%;transform:translateX(0) scale(1);opacity:1;pointer-events:none;transition:transform 850ms cubic-bezier(.3,.02,.18,1),opacity 400ms ease 120ms}
 .pantry-office-scene,.pantry-mobile-scene{position:absolute;inset:0;perspective:1200px}
@@ -237,8 +264,8 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
   .pantry-painted-door-mobile{left:24.5%;top:20.4%;width:50.7%;height:64%;transform-origin:left center;border-radius:12px}
   .pantry-stage.is-open .pantry-painted-door-mobile{transform:rotateY(-105deg);opacity:0}
   .pantry-stage .fridge-door,.pantry-stage .fridge-door:hover{left:20%;top:1%;width:61%;height:91%;border:0;padding:0}
-  .fridge-panel>.toolbar{max-width:480px;margin:auto;padding-bottom:15px}
-  .fridge-panel .search-controls{flex-direction:column;align-items:stretch;gap:8px}.fridge-panel .search-field{width:100%;flex:auto}.fridge-panel .search-field input{font-size:12px;padding-top:11px;padding-bottom:11px}.fridge-panel #category-filter{width:100%;max-width:none;font-size:12px;padding:6px 13px}
+  .fridge-panel>.toolbar{grid-template-columns:minmax(0,1fr);max-width:480px;margin:auto;padding-bottom:15px}
+  .fridge-panel .search-field{width:100%;flex:auto}.fridge-panel .search-field input{font-size:12px;padding-top:11px;padding-bottom:11px}
   .pantry-stage .fridge-window>.fridge-interior{padding:68px 16px 16px;transform-origin:center}
   .fridge-popularity{padding:13px 12px;margin-bottom:20px}.popularity-heading h2{font-size:18px}.popularity-cards{grid-auto-flow:column;grid-auto-columns:minmax(180px,78%);grid-template-columns:none;overflow-x:auto;padding-bottom:5px;scroll-snap-type:x proximity}.popular-drink{scroll-snap-align:start}.popularity-note{font-size:9px}
   .pantry-stage .fridge-crown{padding:8px 10px}.pantry-stage .fridge-maker{font-size:12px;gap:5px}.pantry-stage .fridge-maker-logo{width:23px;height:23px}.pantry-stage .fridge-close{font-size:10px;padding:6px 9px}
@@ -495,7 +522,8 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
   gap: 8px;
   padding: 10px 0;
 }
-.snack-controls select, .snack-search {
+.snack-search {
+  flex: 1;
   min-height: 42px;
   min-width: 0;
   border: 1px solid #e2ceb0;
@@ -503,8 +531,8 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
   background: #fffdf8;
   color: #533926;
 }
-.snack-controls select { padding: 4px 7px; font-size: .83rem; }
 .snack-search { display: flex; align-items: center; gap: 6px; padding-inline: 9px; }
+.snack-cabinet .pantry-category-bar { margin-bottom: 6px; }
 .snack-search input {
   width: 100%;
   padding: 8px 0;
@@ -643,6 +671,7 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
   list-style: none;
 }
 .purchased-wishes-list::-webkit-scrollbar { display: none; }
+.purchased-wishes-list.is-looping { scroll-snap-type: none; }
 .purchased-wishes-list li { flex: 0 0 min(158px, 64vw); scroll-snap-align: start; min-width: 0; }
 .purchased-wishes-list :is(a, .purchased-wish-tile) {
   display: flex;

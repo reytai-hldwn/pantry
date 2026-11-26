@@ -251,6 +251,18 @@ export function renderPantryStockTabs(archived = false) {
   </div>`;
 }
 
+export function renderPantryCategoryBar(categories, selected = '', label = '商品分類') {
+  return `<div class="pantry-category-bar" role="group" aria-label="${h(label)}">${['', ...categories].map(category =>
+    `<button class="pantry-category-button" type="button" data-pantry-category="${h(category)}" aria-pressed="${category === selected}">${h(category || '全部')}</button>`
+  ).join('')}</div>`;
+}
+
+export function selectPantryCategory(bar, category) {
+  for (const button of bar.querySelectorAll('[data-pantry-category]')) {
+    button.setAttribute('aria-pressed', String(button.dataset.pantryCategory === category));
+  }
+}
+
 /** A bounded public display; inventory quantities are deliberately opt-in. */
 export function renderFridge(drinks, { isOpen = false, lastInventoryAt = null, showQuantities = false, formatDate, popularity = null, popularityLoading = false, popularityError = false, popularityOpen = false, loading = false, archiveContent = '', showDrinks = true } = {}) {
   const dateLabel = typeof formatDate === 'function' ? formatDate : (value) => value || '尚未盤點';
