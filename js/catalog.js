@@ -7,7 +7,10 @@ export const FRIDGE_PACKAGING_ORDER = Object.freeze(['窄瓶鋁箔包','鋁箔�
 export function canonicalDrinkCategory(category, name = '') {
   if (name === '可爾必思開心成長160ml' && ['牛乳／植物奶','牛奶／豆漿'].includes(category)) return '其他';
   if (['牛奶／豆漿', '牛乳／豆漿', '牛奶/豆漿', '牛乳/豆漿'].includes(category)) return '牛乳／植物奶';
-  const corrections = { '午后時光重乳奶茶': '茶飲', '義美寶吉葡萄汁': '果汁', '波蜜蜂蜜檸檬': '果汁', '光泉薏仁糙米漿': '牛乳／植物奶' };
+  const corrections = {
+    '午后時光重乳奶茶': '茶飲', '義美寶吉葡萄汁': '果汁', '波蜜蜂蜜檸檬': '果汁',
+    '光泉薏仁糙米漿': '牛乳／植物奶', '愛之味蜂蜜燕麥': '牛乳／植物奶', '愛之味純濃燕麥': '牛乳／植物奶',
+  };
   return category === '其他' && Object.hasOwn(corrections, name) ? corrections[name] : category;
 }
 
@@ -54,14 +57,14 @@ const COMPANY_CATALOG_ROWS = [
   ['Milkis', '汽水', '長鐵罐'],
   ['Redbull能量飲', '其他', '長鐵罐'],
   ['Vida氣泡飲', '汽水', '長鐵罐'],
-  ['愛之味蜂蜜燕麥', '其他', '寶特瓶'],
+  ['愛之味蜂蜜燕麥', '牛乳／植物奶', '寶特瓶'],
   ['麥萃麥茶', '茶飲', '寶特瓶'],
   ['原萃綠茶', '茶飲', '寶特瓶'],
   ['十全果醋', '其他', '其他'],
   ['冷萃金萱烏龍', '大瓶飲料', '大瓶裝'],
   ['Moriyama紅茶', '大瓶飲料', '大瓶裝'],
   ['Moriyama奶茶', '大瓶飲料', '大瓶裝'],
-  ['愛之味純濃燕麥', '其他', '寶特瓶', false],
+  ['愛之味純濃燕麥', '牛乳／植物奶', '寶特瓶', false],
   ['光泉燕麥奶', '牛乳／植物奶', '窄瓶鋁箔包', false],
   ['雪碧', '汽水', '小型鐵罐', false],
   ['紅牌蜂蜜奶茶', '茶飲', '鋁箔包', false],

@@ -94,10 +94,9 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
 .pantry-heading h1{position:relative;display:table;font-size:clamp(32px,3.3vw,48px);font-weight:700;line-height:1.6;letter-spacing:2px;margin:0 0 8px;transform:rotate(-1deg)}
 .pantry-heading h1:after{content:"";position:absolute;left:3%;right:1%;bottom:3px;height:4px;background:#dfbb7b;border-radius:60% 25% 65% 30%;transform:rotate(-1deg)}
 .pantry-heading .page-description{font-size:13px;color:#735441;line-height:1.9}
-.fridge-panel>.toolbar{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px 14px;padding:2px 0 18px;border:0;background:#fff;border-radius:0;margin:0;max-width:none}
-.fridge-panel > .toolbar .pantry-stock-tabs { flex: 0 0 auto; max-width: none; }
+.fridge-panel>.toolbar{display:grid;grid-template-columns:minmax(0,1fr);gap:10px 14px;padding:2px 0 18px;border:0;background:#fff;border-radius:0;margin:0;max-width:none}
 .pantry-stock-tabs { width: max-content; max-width: 100%; }
-.pantry-stock-tabs .filter-tab, .fridge-panel > .toolbar .pantry-stock-tabs .filter-tab { flex: 1; min-width: 0; min-height: 40px; padding: 7px 12px; font-size: .84rem; }
+.pantry-stock-tabs .filter-tab { flex: 1; min-width: 0; min-height: 40px; padding: 7px 12px; font-size: .84rem; }
 .fridge-panel .search-controls{width:100%;gap:13px}
 .fridge-panel .search-field{flex:1;min-width:0}
 .fridge-panel .search-field input{width:100%;font-size:13px;padding:13px 16px 13px 39px;background:#fff;border-color:#bb9578;border-radius:14px 12px 13px 11px}
@@ -710,6 +709,26 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
   text-decoration: none;
 }
 .purchased-wishes-list a:hover { border-color: #849b72; }
+.purchased-wishes-list .purchased-wish-art { position: relative; }
+.purchased-wishes-list .purchased-wish-art::after {
+  content: "";
+  position: absolute;
+  inset: 1px 0 auto auto;
+  width: 8px;
+  height: 8px;
+  background: #d7b787;
+  clip-path: polygon(50% 0, 55% 43%, 100% 50%, 55% 55%, 50% 100%, 45% 55%, 0 50%, 45% 43%);
+  opacity: .49;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .purchased-wishes-list .purchased-wish-art::after { animation: wish-card-glint 4.8s ease-in-out infinite; }
+  .purchased-wishes-list li:nth-child(even) .purchased-wish-art::after { animation-delay: -2.4s; }
+}
+@keyframes wish-card-glint {
+  0%, 55%, 100% { opacity: .36; transform: scale(.77); }
+  32% { opacity: .72; transform: scale(1.05); }
+}
 .purchased-wishes-list b {
   display: -webkit-box;
   overflow: hidden;
@@ -848,11 +867,39 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
 .pantry-skeleton-grid > i::after { top: 124px; width: 66%; height: 9px; }
 .snack-shelves .pantry-skeleton { padding: 16px 14px 0; }
 .snack-shelves .pantry-skeleton-grid > i::before { top: 30px; width: min(77%, 105px); height: 79px; border-radius: 10px; }
-.fridge-opening-skeleton { display: none; }
+.fridge-opening-skeleton { display: none; height: 100%; }
 .fridge[data-door-state="opening"] .fridge-opening-skeleton { display: block; }
 .fridge[data-door-state="opening"] [data-shelf-content] { display: none; }
+.fridge-interior [data-shelf-content]:has(> .fridge-full-skeleton) { height: 100%; }
+.fridge-full-skeleton {
+  display: grid;
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+  gap: clamp(9px, 2vh, 20px);
+  height: 100%;
+  overflow: hidden;
+}
+.fridge-full-skeleton .pantry-skeleton-grid { min-height: 0; padding-bottom: 0; }
+.fridge-full-skeleton .pantry-skeleton-grid > i { height: 100%; animation: none; }
+.fridge-full-skeleton .pantry-skeleton-grid > i::before { top: 7%; height: 68%; }
+.fridge-full-skeleton .pantry-skeleton-grid > i:nth-child(3n + 1)::before { top: 4%; height: 72%; }
+.fridge-full-skeleton .pantry-skeleton-grid > i::after { top: 86%; height: 7px; }
+@container (max-width: 850px) {
+  .fridge-full-skeleton .pantry-skeleton-grid { grid-template-columns: repeat(5, minmax(0,1fr)); }
+  .fridge-full-skeleton .pantry-skeleton-grid > i:nth-child(n + 6) { display: none; }
+}
+@container (max-width: 680px) {
+  .fridge-full-skeleton .pantry-skeleton-grid { grid-template-columns: repeat(4, minmax(0,1fr)); }
+  .fridge-full-skeleton .pantry-skeleton-grid > i:nth-child(n + 5) { display: none; }
+}
+@container (max-width: 520px) {
+  .fridge-full-skeleton .pantry-skeleton-grid { grid-template-columns: repeat(3, minmax(0,1fr)); }
+  .fridge-full-skeleton .pantry-skeleton-grid > i:nth-child(n + 4) { display: none; }
+}
+@container (max-width: 380px) {
+  .fridge-full-skeleton .pantry-skeleton-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .fridge-full-skeleton .pantry-skeleton-grid > i:nth-child(n + 3) { display: none; }
+}
 
-.fridge-history-title { margin: 0 0 16px; color: #715441; font-size: 1.15rem; }
 .fridge-product.is-archived :is(.drink-pack-group, .frozen-product-photo) { filter: brightness(.69) saturate(.72); }
 .fridge-window .fridge-product.is-archived .fridge-product-edit {
   inset: 0; width: 100%; height: 100%; background: transparent; border: 0; border-radius: 5px;
@@ -861,7 +908,7 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
 .archive-detail-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin-bottom: 16px; }
 
 @media (prefers-reduced-motion: no-preference) {
-  .pantry-skeleton-grid > i { animation: pantry-skeleton-pulse 1.45s ease-in-out infinite alternate; }
+  .pantry-skeleton-grid { animation: pantry-skeleton-pulse 1.45s ease-in-out infinite alternate; }
   .fridge.is-ready .fridge-products > .fridge-product,
   .snack-cabinet:not([hidden]) .snack-products > * {
     animation: pantry-card-entry 240ms ease-out backwards;

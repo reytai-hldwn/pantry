@@ -56,7 +56,7 @@ try{
     };
     const showHistory=async()=>{
       await page.evaluate(()=>{ location.hash='overview-history'; });
-      await page.waitForSelector('.fridge-history-title');
+      await page.waitForFunction(() => location.hash === '#overview' && document.querySelector('.fridge.is-ready [data-archived-drink-id]'));
     };
     const poll=()=>page.evaluate(()=>{window.__pantryPollResult=window.__pantryPoll();});
     const finishPoll=()=>page.evaluate(()=>window.__pantryPollResult);
@@ -70,7 +70,7 @@ try{
     let held=holdNext();await poll();await held.started;
     await showHistory();assert.equal(reads.filter(action=>action==='public').length,2,'navigation does not wait for polling');
     held.release();await finishPoll();assert.equal(await page.locator('[data-archived-drink-id]').count(),8);
-    assert.match(await page.locator('.fridge-history-title').innerText(),/曾經喝過/);
+    assert.equal(await page.locator('.fridge-panel [data-pantry-stock]').count(),0);
 
     await menu();held=holdNext();await page.locator('#refresh-button').click();await held.started;
     await nav('wishes');held.release();

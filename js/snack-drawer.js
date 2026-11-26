@@ -27,12 +27,14 @@ function snackProductArt({ photos, compactPhoto }, outlineId) {
   return `<span class="${classes}">${images}</span>`;
 }
 
+const drawerProductNames = product => [product.name, ...(product.aliases || [])];
+
 function findDrawerProduct(item) {
   const key = supplyNameKey(item);
   const [name, flavor] = key.split('\u0000');
   const matches = SNACK_DRAWER_PRODUCTS.filter(product =>
     (product.category === '泡麵') === (item.kind === 'noodle') &&
-    supplyNameKey({ name: product.name }).split('\u0000')[0] === name);
+    drawerProductNames(product).some(candidate => supplyNameKey({ name: candidate }).split('\u0000')[0] === name));
   const exact = matches.find(product => [product.flavors, ...product.details.map(detail => detail.flavor)]
     .some(candidate => supplyNameKey({ name: product.name, flavor: candidate }) === key));
   return exact || (!flavor && matches.length === 1 ? matches[0] : null);
@@ -52,7 +54,7 @@ export function renderPurchasedSnackArt(wish, outlineId) {
   const nameKey = value => normalizeSnackSearch(value).replace(/[\s|｜]/g, '');
   const name = nameKey(wish.name);
   const matches = SNACK_DRAWER_PRODUCTS.filter(product =>
-    archivedFoodWishId(product.key) === wish.id || nameKey(product.name) === name ||
+    archivedFoodWishId(product.key) === wish.id || drawerProductNames(product).some(candidate => nameKey(candidate) === name) ||
     [product.flavors, ...product.details.map(detail => detail.flavor)].some(flavor => nameKey(product.name + flavor) === name));
   const product = matches.length === 1 ? matches[0] : null;
   return product?.photos.length ? snackProductArt(product, outlineId) : '';
@@ -101,7 +103,7 @@ function snackShelves(products, search, selected, historyActions) {
     if (selected && selected !== category) return '';
     const items = products.filter(product => {
       if (product.category !== category) return false;
-      const label = normalizeSnackSearch([product.name, product.flavors, ...product.details.map(detail => detail.flavor)].join(' '));
+      const label = normalizeSnackSearch([...drawerProductNames(product), product.flavors, ...product.details.map(detail => detail.flavor)].join(' '));
       return terms.every(term => label.includes(term));
     });
     if (!items.length) return '';

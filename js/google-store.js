@@ -95,7 +95,7 @@ function googleProductForm(value) {
 // The current Google deployment accepts drink and snack requests. Keep the
 // subtype in the request ID so it survives receipts, later votes and reloads.
 const typedWishPrefix = kind => kind === 'noodle' || kind === 'frozen' ? `wish-kind-${kind}-v1-` : '';
-const kindFromWishId = id => /^wish-web-wish-kind-(noodle|frozen)-v1-/.exec(id)?.[1];
+const kindFromWishId = id => id.startsWith('wish-web-pf-f-') ? 'frozen' : /^wish-web-wish-kind-(noodle|frozen)-v1-/.exec(id)?.[1];
 
 function normalizeGoogleWish(row) {
   if (!row || typeof row !== 'object') throw new Error('Google 許願清單格式不正確。');
@@ -931,7 +931,7 @@ export class GoogleInventoryStore {
     const link = url ? safeUrl(url) : '';
     if (url && !link) throw new Error('請填寫有效的 http 或 https 連結。');
     const prefix = typedWishPrefix(kind);
-    if (prefix && !options?.requestId?.startsWith(prefix)) {
+    if (prefix && kindFromWishId(`wish-web-${options?.requestId || ''}`) !== kind) {
       options = { ...options, requestId: prefix + (options?.requestId || this.createRequestId()) };
     }
     return this.sendWebsiteCommand('wish', { kind: prefix ? 'snack' : kind, name: name.trim(), url: link, note: note.trim() }, options);
@@ -962,13 +962,13 @@ export class GoogleInventoryStore {
     return result;
   }
 
-  async supportArchivedFood({ key, name }, voterName) {
+  async supportArchivedFood({ key, name, kind = 'snack' }, voterName) {
     const voter = wishVoterName(voterName);
     this.getVoterId();
-    const id = archivedFoodWishId(key);
+    const id = archivedFoodWishId(key, kind);
     // Every browser creates the shared proposal with the same request ID.
     // The existing Google vote receipt then records each name independently.
-    await this.ensureWish(id, { kind: 'snack', name, note: '我還想要吃這個！' });
+    await this.ensureWish(id, { kind, name, note: kind === 'frozen' ? '我還想吃，希望有機會可以再買' : '我還想要吃這個！' });
     return this.voteWish(id, voter);
   }
 

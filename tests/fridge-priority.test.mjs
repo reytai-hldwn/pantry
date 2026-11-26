@@ -27,6 +27,18 @@ test('fridge retains beverage categories and orders packaging within each catego
  assert.match(content,/包／週/);assert.doesNotMatch(content,/工作週|5個工作日|週一至週五/);
 });
 
+test('a single shelf places available drinks first and keeps the specified soy and rice cartons adjacent', () => {
+ const category = '牛乳／植物奶';
+ const drinks = [
+   { id: 'old', name: '歷史植物奶', category, packaging: '窄瓶鋁箔包', active: false },
+   { id: 'rice', name: '光泉薏仁糙米漿', category, packaging: '窄瓶鋁箔包', active: true },
+   { id: 'soy', name: '光泉豆漿無加糖', category, packaging: '其他', active: true },
+ ];
+ const html = renderFridge(drinks, { isOpen: true });
+ assert.deepEqual([...html.matchAll(/data-drink-id="([^"]+)"/g)].map(match => match[1]), ['soy', 'rice', 'old']);
+ assert.match(html, /class="fridge-product is-archived" data-drink-id="old"/);
+});
+
 test('only recorded drink zeros become historical and replenish under the same ID',()=>{
  const unknown={id:'unknown',active:true,stock:null,lastCountAt:null};assert.equal(drinkAvailability(unknown),unknown);
  const zero=drinkAvailability({id:'a',active:true,stock:0,lastCountAt:'2026-11-04'});assert.equal(zero.active,false);assert.equal(zero.autoArchived,true);

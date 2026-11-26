@@ -221,6 +221,23 @@ test('two browsers can register names for the same archived bowl with one shared
   assert.deepEqual(plain(wishes[0].supporters).sort(), ['乙', '甲']);
 });
 
+test('an archived ice product creates one typed wish across browser sessions, including maximum-length inventory IDs', async () => {
+  const b = websiteBackend();
+  let sequence = 0;
+  const createRequestId = () => `frozen-return-test-request-${++sequence}`;
+  const first = client(b, { createRequestId, createVoterId: () => 'archive-test-browser-a' }).store;
+  const second = client(b, { createRequestId, createVoterId: () => 'archive-test-browser-b' }).store;
+  await Promise.all([first.init(), second.init()]);
+  const item = { key: 'inventory-supply-frozen-' + 'a'.repeat(66), kind: 'frozen', name: '測試冰品' };
+  await Promise.all([first.supportArchivedFood(item, '甲'), second.supportArchivedFood(item, '乙')]);
+  const fresh = client(b).store;
+  await fresh.init();
+  assert.equal(fresh.data.wishes.length, 1);
+  assert.equal(fresh.data.wishes[0].kind, 'frozen');
+  assert.equal(fresh.data.wishes[0].votes, 2);
+  assert.deepEqual([...fresh.data.wishes[0].supporters].sort(), ['乙', '甲']);
+});
+
 test('legacy or mismatched receipts use the confirmed full-read fallback',async()=>{
   for(const patch of [undefined,{operation:'wish',id:'wrong',snapshotAt:stamp,wish:{id:'wrong'}}]){
     const b=websiteBackend(),c=client(b,{submitWebsiteCommand:async(_url,command)=>patch||{operation:'wish',id:'legacy'}});

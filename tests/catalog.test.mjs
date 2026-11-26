@@ -21,7 +21,7 @@ test('company catalog preserves all 40 supplied names with stable IDs', () => {
 test('the eight formerly purchased drinks begin archived without fabricated quantities', () => {
   assert.equal(COMPANY_CATALOG.filter((drink) => drink.active).length, 32);
   assert.deepEqual(COMPANY_CATALOG.filter((drink) => !drink.active).map((drink) => [drink.id, drink.name, drink.category, drink.packaging, drink.unit]), [
-    ['company-drink-33', '愛之味純濃燕麥', '其他', '寶特瓶', '瓶'],
+    ['company-drink-33', '愛之味純濃燕麥', '牛乳／植物奶', '寶特瓶', '瓶'],
     ['company-drink-34', '光泉燕麥奶', '牛乳／植物奶', '窄瓶鋁箔包', '包'],
     ['company-drink-35', '雪碧', '汽水', '小型鐵罐', '罐'],
     ['company-drink-36', '紅牌蜂蜜奶茶', '茶飲', '鋁箔包', '包'],
@@ -40,16 +40,16 @@ test('the eight formerly purchased drinks begin archived without fabricated quan
 test('milk and plant drinks include the owner-confirmed rice drink while tea stays separate', () => {
   assert.deepEqual(CATEGORIES_ORDER, ['牛乳／植物奶', '茶飲', '咖啡', '果汁', '汽水', '其他', '大瓶飲料']);
   assert.deepEqual(COMPANY_CATALOG.filter((drink) => drink.active && drink.category === '牛乳／植物奶').map((drink) => drink.name), [
-    '光泉牛乳', '光泉巧克力牛乳', '光泉薏仁糙米漿', '統一豆漿',
+    '光泉牛乳', '光泉巧克力牛乳', '光泉薏仁糙米漿', '統一豆漿', '愛之味蜂蜜燕麥',
   ]);
   const category = (name) => COMPANY_CATALOG.find((drink) => drink.name === name).category;
   assert.equal(category('立頓原味奶茶'), '茶飲');
   assert.equal(category('立頓沁香奶綠'), '茶飲');
   assert.equal(category('立頓巧克力奶茶'), '茶飲');
   assert.equal(category('光泉薏仁糙米漿'), '牛乳／植物奶');
-  assert.equal(category('愛之味蜂蜜燕麥'), '其他');
+  assert.equal(category('愛之味蜂蜜燕麥'), '牛乳／植物奶');
   assert.deepEqual(Object.fromEntries(CATEGORIES_ORDER.map((name) => [name, COMPANY_CATALOG.filter((drink) => drink.active && drink.category === name).length])), {
-    '牛乳／植物奶': 4, '茶飲': 7, '咖啡': 0, '果汁': 4, '汽水': 9, '其他': 5, '大瓶飲料': 3,
+    '牛乳／植物奶': 5, '茶飲': 7, '咖啡': 0, '果汁': 4, '汽水': 9, '其他': 4, '大瓶飲料': 3,
   });
 });
 

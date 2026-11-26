@@ -184,7 +184,7 @@ var INITIAL_CATALOG = /* GENERATED_CATALOG_START */ [
   {
     "id": "company-drink-26",
     "name": "愛之味蜂蜜燕麥",
-    "category": "其他",
+    "category": "牛乳／植物奶",
     "packaging": "寶特瓶",
     "unit": "瓶"
   },
@@ -233,7 +233,7 @@ var INITIAL_CATALOG = /* GENERATED_CATALOG_START */ [
   {
     "id": "company-drink-33",
     "name": "愛之味純濃燕麥",
-    "category": "其他",
+    "category": "牛乳／植物奶",
     "packaging": "寶特瓶",
     "unit": "瓶",
     "active": false
@@ -1938,7 +1938,7 @@ function initializeCatalog_(ss) {
 function canonicalDrinkCategory_(category, name) {
   if(name==='可爾必思開心成長160ml'&&['牛乳／植物奶','牛奶／豆漿'].indexOf(category)>=0)return '其他';
   if (['牛奶／豆漿','牛乳／豆漿','牛奶/豆漿','牛乳/豆漿'].indexOf(category) >= 0) return '牛乳／植物奶';
-  var corrections = {'午后時光重乳奶茶':'茶飲','義美寶吉葡萄汁':'果汁','波蜜蜂蜜檸檬':'果汁','光泉薏仁糙米漿':'牛乳／植物奶'};
+  var corrections = {'午后時光重乳奶茶':'茶飲','義美寶吉葡萄汁':'果汁','波蜜蜂蜜檸檬':'果汁','光泉薏仁糙米漿':'牛乳／植物奶','愛之味蜂蜜燕麥':'牛乳／植物奶','愛之味純濃燕麥':'牛乳／植物奶'};
   return category === '其他' && Object.prototype.hasOwnProperty.call(corrections,name) ? corrections[name] : category;
 }
 

@@ -488,11 +488,11 @@ export class InventoryStore {
     return { wish };
   }
 
-  async supportArchivedFood({ key, name }, voterName) {
+  async supportArchivedFood({ key, name, kind = 'snack' }, voterName) {
     if (this.mode !== 'demo') throw new Error('目前連線尚未啟用回購許願。');
-    const voter = wishVoterName(voterName), id = archivedFoodWishId(key);
+    const voter = wishVoterName(voterName), id = archivedFoodWishId(key, kind);
     if (!this.data.wishes.some(wish => wish.id === id)) {
-      await this.submitWish({ kind: 'snack', name, note: '我還想要吃這個！' }, { id, voterName: voter });
+      await this.submitWish({ kind, name, note: kind === 'frozen' ? '我還想吃，希望有機會可以再買' : '我還想要吃這個！' }, { id, voterName: voter });
       return { id, alreadyVoted: false };
     }
     const alreadyVoted = this.hasVoted(id);

@@ -81,7 +81,7 @@ try{
       assert.equal(await page.locator('.fridge-open-guide').isVisible(),false);await page.locator('.fridge-close').click();
     }
     await page.locator('.fridge-door').click();await page.waitForSelector('.fridge.is-ready');
-    assert.equal(await page.locator('.fridge-product').count(),32);assert.equal(await page.locator('.fridge-panel > .toolbar').isVisible(),true);
+    assert.equal(await page.locator('.fridge-product').count(),40);assert.equal(await page.locator('.fridge-panel > .toolbar').isVisible(),true);
     const scrolled=await page.locator('.fridge-interior').evaluate(e=>{e.scrollTop=e.scrollHeight;return e.scrollTop;});assert.ok(scrolled>0);
     await page.locator('#search').fill('光泉牛乳');await page.waitForFunction(()=>document.querySelectorAll('.fridge-product').length===1);
     await page.locator('.fridge-close').click();assert.equal(await page.locator('.fridge-panel > .toolbar').isVisible(),false);
@@ -153,6 +153,6 @@ try{
   const embedded=await page.locator('.pantry-office-wide .pantry-scene-art image').getAttribute('href');assert.ok(embedded.startsWith('data:image/webp;base64,'));
   const dimensions=await page.evaluate(src=>new Promise((resolve,reject)=>{const image=new Image();image.onload=()=>resolve([image.naturalWidth,image.naturalHeight]);image.onerror=reject;image.src=src;}),embedded);
   assert.deepEqual(dimensions,[1672,941]);await page.locator('.fridge-open-guide').click();await page.waitForSelector('.fridge.is-ready');
-  assert.equal(await page.locator('.fridge-product').count(),32);assert.deepEqual(external,[]);
+  assert.equal(await page.locator('.fridge-product').count(),40);assert.deepEqual(external,[]);
   console.log('PASS standalone preview: native WebP and vector hint work without external requests');await context.close();
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}

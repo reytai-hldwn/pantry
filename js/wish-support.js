@@ -15,10 +15,11 @@ export function wishSupportPreview(wish) {
   return [listed + (names.length > 8 ? `等 ${names.length} 位` : ''), unnamed ? `${unnamed} 位未留姓名` : ''].filter(Boolean).join('；');
 }
 
-export function archivedFoodWishId(key) {
+export function archivedFoodWishId(key, kind = 'snack') {
   const inventory = key.startsWith('inventory-');
   const id = inventory ? key.slice('inventory-'.length) : key;
   if (!/^[A-Za-z0-9_-]{1,80}$/.test(id)) throw new Error('找不到這個歷史品項。');
+  if (kind === 'frozen') return `wish-web-pf-f-${id}-v1`;
   return `wish-web-pf-${inventory ? 'i' : 'c'}-${id}-v1-pantry-wish`;
 }
 
