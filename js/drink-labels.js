@@ -1481,6 +1481,48 @@ export const CHECKED_DRINK_LABELS = [
   },
   {
     "names": [
+      "義美低糖豆奶",
+      "義美低糖豆漿"
+    ],
+    "packaging": "鋁箔包",
+    "acceptUnclassifiedPackaging": true,
+    "container": "250 毫升",
+    "ingredients": "水、非基因改造黃豆、蔗糖",
+    "allergens": "本產品含大豆。生產製程廠房的設備或管線另有處理奶類、芹菜、奇異果、花生及芝麻。",
+    "nutrition": {
+      "basis": "每份 250 毫升，本包裝含 1 份",
+      "energyKcal": 112,
+      "proteinG": 8.8,
+      "fatG": 4.8,
+      "saturatedFatG": 0.7,
+      "transFatG": 0,
+      "carbohydrateG": 8.5,
+      "sugarG": 6.2,
+      "sodiumMg": 2.9,
+      "cholesterolMg": 0,
+      "per100": {
+        "energyKcal": 44.8,
+        "proteinG": 3.5,
+        "fatG": 1.9,
+        "saturatedFatG": 0.3,
+        "transFatG": 0,
+        "carbohydrateG": 3.4,
+        "sugarG": 2.5,
+        "sodiumMg": 1.2,
+        "cholesterolMg": 0
+      }
+    },
+    "source": {
+      "type": "retailer-label",
+      "label": "Costco 好市多・義美低糖豆奶",
+      "checkedAt": "2026-11-26",
+      "scope": "依 250 毫升低糖豆奶包裝標示轉錄。",
+      "url": "https://www.costco.com.tw/Food-Dining/Drinks/Beverages-Juice/I-Mei-Low-Sugar-Soybean-Milk-250-ml-X-24-Count/p/146158",
+      "labelUrl": "https://www.costco.com.tw/mediapermalink/146158_desc_01-240510"
+    }
+  },
+  {
+    "names": [
       "光泉豆漿無加糖",
       "光泉無加糖豆漿",
       "光泉豆漿-無加糖"
