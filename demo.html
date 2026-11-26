@@ -854,7 +854,34 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
   background: var(--paper, #fbfcf7);
 }
 .purchased-wishes-heading { display: flex; align-items: center; gap: 8px; min-height: 28px; margin-bottom: 5px; }
-.purchased-wishes-heading h2 { margin: 0; font-size: .92rem; }
+.purchased-wishes-heading h2 { position: relative; margin: 0; padding-inline-end: 21px; font-size: .92rem; white-space: nowrap; }
+.purchased-wishes-heading h2::before,
+.purchased-wishes-heading h2::after {
+  content: "";
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  inset-block-start: .32em;
+  inset-inline-end: 5px;
+  background: #bb8743;
+  clip-path: polygon(50% 0, 64% 36%, 100% 50%, 64% 64%, 50% 100%, 36% 64%, 0 50%, 36% 36%);
+  opacity: .72;
+}
+.purchased-wishes-heading h2::after {
+  width: 6px;
+  height: 6px;
+  inset-block-start: .04em;
+  inset-inline-end: 0;
+  background: #d4a263;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .purchased-wishes-heading h2::before { animation: wish-sparkle 3.6s ease-in-out infinite; }
+  .purchased-wishes-heading h2::after { animation: wish-sparkle 3.6s -1.1s ease-in-out infinite; }
+}
+@keyframes wish-sparkle {
+  0%, 60%, 100% { opacity: .55; transform: scale(.84); }
+  30% { opacity: 1; transform: scale(1.12); }
+}
 .purchased-wishes-heading > span { color: #58694b; font-size: .7rem; }
 .purchased-wishes-nav { display: flex; gap: 5px; margin-inline-start: auto; }
 .purchased-wishes-nav[hidden] { display: none; }
@@ -7628,9 +7655,9 @@ function hydratePurchasedWishArt(container, wish, outlineId) {
 function renderPurchasedWishes(wishes) {
   if (!wishes.length) return '';
   return `<section class="purchased-wishes" aria-labelledby="purchased-wishes-title">
-    <div class="purchased-wishes-heading"><h2 id="purchased-wishes-title">願望成真</h2><span>已購買</span>
-      <div class="purchased-wishes-nav" hidden><button type="button" data-wish-slide="-1" aria-label="上一個已購買品項" aria-controls="purchased-wishes-list">‹</button><button type="button" data-wish-slide="1" aria-label="下一個已購買品項" aria-controls="purchased-wishes-list">›</button></div></div>
-    <ul class="purchased-wishes-list" id="purchased-wishes-list" tabindex="0" aria-label="已購買的願望">${wishes.map(wish => {
+    <div class="purchased-wishes-heading"><h2 id="purchased-wishes-title">願望成真</h2><span>許願後，已到貨！</span>
+      <div class="purchased-wishes-nav" hidden><button type="button" data-wish-slide="-1" aria-label="上一個到貨品項" aria-controls="purchased-wishes-list">‹</button><button type="button" data-wish-slide="1" aria-label="下一個到貨品項" aria-controls="purchased-wishes-list">›</button></div></div>
+    <ul class="purchased-wishes-list" id="purchased-wishes-list" tabindex="0" aria-label="已到貨的願望">${wishes.map(wish => {
     const url = safeUrl(wish.url);
     const productLabel = wish.purchasedProduct ? supplyLabel(wish.purchasedProduct) : '';
     const content = `${purchasedWishArt(wish)}<span class="purchased-wish-caption"><b>${h(wish.name)}</b>${productLabel && productLabel !== wish.name ? `<small title="${h(productLabel)}">${h(productLabel)}</small>` : ''}</span>`;
@@ -7638,6 +7665,7 @@ function renderPurchasedWishes(wishes) {
   }).join('')}</ul></section>`;
 }
 
+const PURCHASED_WISH_CARD_SCROLL_MS = 2500;
 let disposePurchasedWishCarousel;
 
 function bindPurchasedWishes(wishes) {
@@ -7663,7 +7691,7 @@ function bindPurchasedWishes(wishes) {
   function animate(now) {
     if (lastFrame !== undefined) {
       const elapsed = Math.min(now - lastFrame, 50);
-      position = (position + cardStep * elapsed / 1000) % cycleWidth;
+      position = (position + cardStep * elapsed / PURCHASED_WISH_CARD_SCROLL_MS) % cycleWidth;
       list.scrollLeft = position;
     }
     lastFrame = now;

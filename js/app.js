@@ -772,9 +772,9 @@ function hydratePurchasedWishArt(container, wish, outlineId) {
 function renderPurchasedWishes(wishes) {
   if (!wishes.length) return '';
   return `<section class="purchased-wishes" aria-labelledby="purchased-wishes-title">
-    <div class="purchased-wishes-heading"><h2 id="purchased-wishes-title">願望成真</h2><span>已購買</span>
-      <div class="purchased-wishes-nav" hidden><button type="button" data-wish-slide="-1" aria-label="上一個已購買品項" aria-controls="purchased-wishes-list">‹</button><button type="button" data-wish-slide="1" aria-label="下一個已購買品項" aria-controls="purchased-wishes-list">›</button></div></div>
-    <ul class="purchased-wishes-list" id="purchased-wishes-list" tabindex="0" aria-label="已購買的願望">${wishes.map(wish => {
+    <div class="purchased-wishes-heading"><h2 id="purchased-wishes-title">願望成真</h2><span>許願後，已到貨！</span>
+      <div class="purchased-wishes-nav" hidden><button type="button" data-wish-slide="-1" aria-label="上一個到貨品項" aria-controls="purchased-wishes-list">‹</button><button type="button" data-wish-slide="1" aria-label="下一個到貨品項" aria-controls="purchased-wishes-list">›</button></div></div>
+    <ul class="purchased-wishes-list" id="purchased-wishes-list" tabindex="0" aria-label="已到貨的願望">${wishes.map(wish => {
     const url = safeUrl(wish.url);
     const productLabel = wish.purchasedProduct ? supplyLabel(wish.purchasedProduct) : '';
     const content = `${purchasedWishArt(wish)}<span class="purchased-wish-caption"><b>${h(wish.name)}</b>${productLabel && productLabel !== wish.name ? `<small title="${h(productLabel)}">${h(productLabel)}</small>` : ''}</span>`;
@@ -782,6 +782,7 @@ function renderPurchasedWishes(wishes) {
   }).join('')}</ul></section>`;
 }
 
+const PURCHASED_WISH_CARD_SCROLL_MS = 2500;
 let disposePurchasedWishCarousel;
 
 function bindPurchasedWishes(wishes) {
@@ -807,7 +808,7 @@ function bindPurchasedWishes(wishes) {
   function animate(now) {
     if (lastFrame !== undefined) {
       const elapsed = Math.min(now - lastFrame, 50);
-      position = (position + cardStep * elapsed / 1000) % cycleWidth;
+      position = (position + cardStep * elapsed / PURCHASED_WISH_CARD_SCROLL_MS) % cycleWidth;
       list.scrollLeft = position;
     }
     lastFrame = now;
