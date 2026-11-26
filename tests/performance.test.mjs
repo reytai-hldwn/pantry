@@ -131,16 +131,21 @@ test('a confirmed purchase receipt updates the next public view with the selecte
   assert.equal(fresh.store.data.wishes[0].purchasedProduct.id, 'supply-snack-01');
 });
 
-test('the snack drawer cache exposes catalog availability without retaining warehouse observations', async () => {
+test('the public food cache exposes catalog availability without retaining warehouse observations', async () => {
   const b = websiteBackend(), c = client(b);
+  const frozen = b.send('new-arrival', { kind: 'frozen', name: '測試冰品', unit: '支', quantity: 4, recorder: '現場入庫姓名' });
+  assert.equal(frozen.state, 'accepted');
   b.send('supply-stocktake', { entries: [{ supplyId: 'supply-noodle-01', quantity: 6 }], recorder: '現場盤點姓名' });
   const fresh = await c.store.readSnackDrawer();
   assert.equal(fresh.supplies.find(item => item.id === 'supply-noodle-01').stock, 6);
+  assert.equal(fresh.supplies.find(item => item.id === frozen.result.id).stock, 4);
   const cached = c.store.cachedSnackDrawerPreview();
   assert.equal(cached.supplies.find(item => item.id === 'supply-noodle-01').stock, null);
+  assert.deepEqual(cached.supplies.find(item => item.id === frozen.result.id),
+    { id: frozen.result.id, name: '測試冰品', kind: 'frozen', unit: '支', active: true, stock: null, lastCountAt: null });
   assert.equal(cached.supplyEvents, undefined);
   assert.equal(cached.data.drinks, undefined);
-  assert.doesNotMatch(JSON.stringify(cached), /現場盤點姓名/);
+  assert.doesNotMatch(JSON.stringify(cached), /現場(?:盤點|入庫)姓名/);
 });
 
 test('an expiry correction changes one arrival batch even before the first count', () => {

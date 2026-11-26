@@ -238,7 +238,7 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
   .pantry-stage.is-open .pantry-painted-door-mobile{transform:rotateY(-105deg);opacity:0}
   .pantry-stage .fridge-door,.pantry-stage .fridge-door:hover{left:20%;top:1%;width:61%;height:91%;border:0;padding:0}
   .fridge-panel>.toolbar{max-width:480px;margin:auto;padding-bottom:15px}
-  .fridge-panel .search-controls{flex-direction:column;align-items:stretch;gap:8px}.fridge-panel .search-field{width:100%;flex:auto}.fridge-panel .search-field input{font-size:12px;padding-top:11px;padding-bottom:11px}.fridge-panel #category-filter{width:100%;max-width:none;font-size:12px;padding:10px 13px}
+  .fridge-panel .search-controls{flex-direction:column;align-items:stretch;gap:8px}.fridge-panel .search-field{width:100%;flex:auto}.fridge-panel .search-field input{font-size:12px;padding-top:11px;padding-bottom:11px}.fridge-panel #category-filter{width:100%;max-width:none;font-size:12px;padding:6px 13px}
   .pantry-stage .fridge-window>.fridge-interior{padding:68px 16px 16px;transform-origin:center}
   .fridge-popularity{padding:13px 12px;margin-bottom:20px}.popularity-heading h2{font-size:18px}.popularity-cards{grid-auto-flow:column;grid-auto-columns:minmax(180px,78%);grid-template-columns:none;overflow-x:auto;padding-bottom:5px;scroll-snap-type:x proximity}.popular-drink{scroll-snap-align:start}.popularity-note{font-size:9px}
   .pantry-stage .fridge-crown{padding:8px 10px}.pantry-stage .fridge-maker{font-size:12px;gap:5px}.pantry-stage .fridge-maker-logo{width:23px;height:23px}.pantry-stage .fridge-close{font-size:10px;padding:6px 9px}

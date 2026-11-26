@@ -171,3 +171,14 @@
 }
 
 .fridge-popularity>summary{cursor:pointer;position:relative;list-style:none;padding-right:22px}.fridge-popularity>summary::-webkit-details-marker{display:none}.fridge-popularity>summary::after{content:"";position:absolute;right:3px;top:40%;width:7px;height:7px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg)}.fridge-popularity[open]>summary::after{transform:rotate(225deg)}.fridge-popularity:not([open]) .popularity-heading{margin-bottom:0}
+
+.frozen-product-photo { display: block; width: min(100%, 136px); height: auto; max-height: 136px; object-fit: contain; }
+.frozen-shelf .fridge-product-stage { align-items: flex-end; }
+.frozen-shelf .frozen-product-photo { transition: transform .18s ease; }
+.frozen-shelf .fridge-product:hover .frozen-product-photo { transform: translateY(-3px); }
+.frozen-shelf .fridge-product-info { display: block; padding: 5px 4px 0; }
+.frozen-product-name { display: block; color: #70523e; font-size: .8rem; line-height: 1.55; overflow-wrap: anywhere; }
+.frozen-product-placeholder { align-self: center; color: #705d4f; font-size: .75rem; }
+.frozen-shelf-message { margin: 0 6px 13px; font-size: .8rem; }
+.frozen-detail-art { display: flex; justify-content: center; margin: 0 0 12px; }
+.purchased-wish-art .frozen-product-photo { max-width: 43px; max-height: 43px; }

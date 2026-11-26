@@ -18,6 +18,7 @@ import { CONSUMPTION_KINDS, buildConsumptionRecords, consumptionPeriod, selectCo
 import { renderConsumptionControls, renderConsumptionResults } from './consumption-view.js';
 import { gachaDay, gachaResetDelay, drawGacha, readDailyGacha, saveDailyGacha, chooseGachaDrink, chooseGachaSnack, renderGacha, gachaFlightKeyframes, GACHA_ANIMATION_MS, GACHA_OPEN_MS, GACHA_FLIGHT_MS, GACHA_UNFOLD_MS } from './gacha.js';
 import { renderSnackDrawerRoom } from './snack-room.js';
+import { findFrozenProduct, renderFrozenProductDetails, renderFrozenProductPhoto, renderFrozenShelf } from './frozen-shelf.js';
 
 const store = window.DRINKS_CONFIG?.provider === 'google' ? new GoogleInventoryStore(window.DRINKS_CONFIG) : new InventoryStore(window.DRINKS_CONFIG);
 const $ = (selector) => document.querySelector(selector);
@@ -47,6 +48,7 @@ let category = '';
 let display = 'fridge';
 let fridgeOpen = false;
 let fridgeHistory = false;
+const frozenShelf = { items: [], status: 'idle', pending: null };
 try { if (localStorage.getItem('holdwin-display') === 'list') display = 'list'; } catch { /* optional display preference */ }
 let dirty = false;
 let modalDirty = false;
@@ -197,11 +199,13 @@ function forecast(drink) {
 }
 
 function inventoryToolbar(warehouse = false) {
-  return `<div class="toolbar">${warehouse ? `<div class="filter-tabs" role="group" aria-label="倉庫篩選">${[['low', '庫存量少'], ['all', '供應中'], ['archived', '歷史品項']].map(([value, label]) => `<button class="filter-tab ${filter === value ? 'selected' : ''}" data-filter="${value}" aria-pressed="${filter === value}">${label}</button>`).join('')}</div>` : renderPantryStockTabs(fridgeHistory)}<div class="search-controls"><label class="search-field"><span aria-hidden="true">⌕</span><input id="search" type="search" maxlength="80" placeholder="找找喜歡的飲料…" aria-label="搜尋飲料" value="${h(query)}"></label><select id="category-filter" aria-label="篩選飲料分類"><option value="">所有分類</option>${categoryNames().map((name) => `<option value="${h(name)}"${category === name ? ' selected' : ''}>${h(name)}</option>`).join('')}</select></div></div>`;
+  const itemTypes = warehouse ? '飲料' : '飲料或冰品';
+  const filterCategories = warehouse ? categoryNames() : [...new Set([...categoryNames(), '冰品'])];
+  return `<div class="toolbar">${warehouse ? `<div class="filter-tabs" role="group" aria-label="倉庫篩選">${[['low', '庫存量少'], ['all', '供應中'], ['archived', '歷史品項']].map(([value, label]) => `<button class="filter-tab ${filter === value ? 'selected' : ''}" data-filter="${value}" aria-pressed="${filter === value}">${label}</button>`).join('')}</div>` : renderPantryStockTabs(fridgeHistory)}<div class="search-controls"><label class="search-field"><span aria-hidden="true">⌕</span><input id="search" type="search" maxlength="80" placeholder="找找${itemTypes}…" aria-label="搜尋${itemTypes}" value="${h(query)}"></label><select id="category-filter" aria-label="篩選${itemTypes}分類"><option value="">所有分類</option>${filterCategories.map((name) => `<option value="${h(name)}"${category === name ? ' selected' : ''}>${h(name)}</option>`).join('')}</select></div></div>`;
 }
 
 function renderOverview() {
-  main.innerHTML = `<div class="pantry-heading">${heading('OPEN A LITTLE HAPPINESS', '今天，喝點什麼？', '果汁、茶品與各項飲料，為你補充工作所需的燃料')}</div>` +
+  main.innerHTML = `<div class="pantry-heading">${heading('OPEN A LITTLE HAPPINESS', '今天，喝點什麼？', '果汁、茶飲，還有冰品，隨時來冰箱補給。')}</div>` +
     `<section class="pantry-overview" aria-label="飲料冰箱"><div class="inventory-panel fridge-panel${fridgeOpen ? ' is-browsing' : ''}">${inventoryToolbar()}<div id="inventory-table"></div></div></section>`;
   $('.fridge-panel > .toolbar').hidden = !fridgeOpen;
   renderInventoryTable();
@@ -474,14 +478,49 @@ function renderInventoryTable() {
   if(warehouse)drinks=sortedStock(drinks);
   if (!drinks.length && warehouse) { target.innerHTML = empty('這一格還沒有飲料', '換個分類或關鍵字看看。'); return; }
   if (!warehouse) {
-    target.innerHTML = renderFridge(archived ? activeDrinks() : drinks, { archiveContent: archived ? renderArchivedDrinks(drinks) : '', loading:store.mode==='google'&&!store.googleViewLoaded, isOpen: fridgeOpen, lastInventoryAt: store.data.lastInventoryAt, formatDate, showQuantities: false,
+    target.innerHTML = renderFridge(archived || category === '冰品' ? activeDrinks() : drinks, { archiveContent: archived && category !== '冰品' ? renderArchivedDrinks(drinks) : '', showDrinks: category !== '冰品', loading:store.mode==='google'&&!store.googleViewLoaded, isOpen: fridgeOpen, lastInventoryAt: store.data.lastInventoryAt, formatDate, showQuantities: false,
       popularityOpen: popularityExpanded, popularity: store.mode === 'google' ? store.popularity : getWeeklyPopularity(store.data.drinks, store.data.events), popularityLoading, popularityError });
     syncFridgeScene(target.querySelector('.pantry-stage'));
-    if (fridgeOpen && !fridgeHistory && popularityExpanded) loadFridgePopularity();
+    updateFrozenShelf();
+    if (fridgeOpen && !fridgeHistory && popularityExpanded && category !== '冰品') loadFridgePopularity();
     return;
   }
   const copyBar = ['all','low','archived'].includes(filter) ? `<div class="refill-copy-bar"><span>只複製本頁已勾選「需要補貨」的品項。</span>${button('⧉ 複製補貨清單', 'copy-low', '', 'button-small button-outline')}</div>` : '';
   target.innerHTML = copyBar + `<div class="table-scroll"><table class="inventory-drinks-table"><thead><tr><th>飲料品項</th><th>分類／包裝</th><th>庫存餘量</th><th>補貨狀態</th><th>最近實際盤點</th><th>管理</th></tr></thead><tbody>${drinks.map((drink) => `<tr data-stock-drink-id="${h(drink.id)}"><td class="inventory-name-cell">${drinkCell(drink)}</td><td data-label="分類／包裝"><span class="category-label">${h(drink.category)}</span><p class="cell-note">${h(drink.packaging || drink.unit)}</p></td><td data-label="庫存餘量"><div class="stock-value ${needsRestock(drink) ? 'low warehouse-low' : ''}">${hasRecordedStock(drink) ? drink.stock : '—'}<small>${h(drink.unit)}</small></div></td><td class="inventory-status-cell" data-label="補貨狀態">${restockState(drink)}</td><td data-label="最近實際盤點"><span class="cell-note">${drink.lastCountAt ? formatDate(drink.lastCountAt) : drink.lastArrivalAt ? `尚未實際盤點<br>入庫 ${formatDate(drink.lastArrivalAt)}` : '尚無紀錄'}</span></td><td class="inventory-actions-cell">${store.canEdit ? `<button class="cell-action" data-action="edit-drink" data-id="${h(drink.id)}" aria-label="編輯${h(drink.name)}">編輯 ↗</button>` : '<a class="text-link" href="#restock">登記入庫 ↗</a>'}</td></tr>`).join('')}</tbody></table></div><div class="table-bottom"><span>顯示 ${drinks.length} 種飲料</span><span>歷史品項保留原本數量與紀錄</span></div>`;
+}
+
+function updateFrozenShelf() {
+  const target = main.querySelector('[data-fridge-frozen]');
+  if (!target || !fridgeOpen || (category && category !== '冰品')) return;
+  if (store.mode === 'google' && frozenShelf.status === 'idle') {
+    if (!store.googleViewLoaded) return;
+    frozenShelf.items = store.cachedSnackDrawerPreview()?.supplies.filter(item => item.kind === 'frozen') || [];
+    loadFrozenShelf();
+    return;
+  }
+  const items = store.mode === 'google' ? frozenShelf.items : supplyItems().filter(item => item.kind === 'frozen');
+  target.innerHTML = renderFrozenShelf(items, {
+    archived: fridgeHistory, query, selected: category === '冰品', status: frozenShelf.status,
+  });
+}
+
+function loadFrozenShelf(force = false) {
+  if (store.mode !== 'google' || frozenShelf.pending) return frozenShelf.pending;
+  frozenShelf.status = 'loading';
+  frozenShelf.pending = (async () => {
+    try {
+      const { supplies } = await store.readSnackDrawer(force);
+      frozenShelf.items = supplies.filter(item => item.kind === 'frozen').map(({ id, name, active }) => ({ id, name, active }));
+      frozenShelf.status = 'ready';
+    } catch {
+      frozenShelf.status = 'error';
+    } finally {
+      frozenShelf.pending = null;
+      updateFrozenShelf();
+    }
+  })();
+  updateFrozenShelf();
+  return frozenShelf.pending;
 }
 
 async function loadFridgePopularity() {
@@ -708,7 +747,8 @@ function purchasedWishArt(wish) {
   const kind = linked?.kind || wishKind(wish);
   const drink = kind === 'drink' && drinkById(linked?.id || wish.sourceDrinkId);
   const pack = drink || { name: linked?.name || wish.name };
-  const photo = kind === 'drink' && findProductPhoto(pack.name) ? drinkPack(pack, { thumbnail: true }) : '';
+  const photo = kind === 'frozen' ? renderFrozenProductPhoto(findFrozenProduct(pack.name), { thumbnail: true })
+    : kind === 'drink' && findProductPhoto(pack.name) ? drinkPack(pack, { thumbnail: true }) : '';
   const fallback = `<span class="purchased-wish-fallback" aria-hidden="true">${h(SUPPLY_KINDS[kind] || wishKindLabel(kind))}</span>`;
   return `<div class="purchased-wish-art"${['snack', 'noodle'].includes(kind) ? ' data-purchased-snack-art' : ''}>${fallback}${photo}</div>`;
 }
@@ -718,7 +758,7 @@ function hydratePurchasedWishArt(container, wish, outlineId) {
   if (!art) return;
   const img = art.querySelector('img');
   if (img) {
-    const removeBrokenImage = () => img.closest('.drink-pack-group')?.remove();
+    const removeBrokenImage = () => (img.closest('.drink-pack-group') || img).remove();
     img.addEventListener('error', removeBrokenImage, { once: true });
     if (img.complete && !img.naturalWidth) removeBrokenImage();
   }
@@ -1615,6 +1655,16 @@ async function runAction(action, id) {
   if (action === 'view-wish-supporters') { openWishSupporters(id); return; }
   if (action === 'view-drink-label') { openDrinkLabel(id); return; }
   if (action === 'view-drink') { openDrinkDetails(id); return; }
+  if (action === 'view-frozen') {
+    const items = store.mode === 'google' ? frozenShelf.items : supplyItems().filter(item => item.kind === 'frozen');
+    const item = items.find(item => item.id === id);
+    if (item) {
+      const product = findFrozenProduct(item.name);
+      showModal(h(product?.name || item.name), '冰品', renderFrozenProductDetails(product));
+    }
+    return;
+  }
+  if (action === 'retry-frozen') { await loadFrozenShelf(true); return; }
   if (action === 'toggle-mobile-menu') {
     const expanded = document.body.classList.toggle('mobile-menu-open');
     $('.mobile-menu-toggle').setAttribute('aria-expanded', String(expanded));
@@ -1630,6 +1680,10 @@ async function runAction(action, id) {
     }
     fridgeOpen = !fridgeOpen;
     syncFridgeDoor($('.fridge'), fridgeOpen);
+    if (fridgeOpen) {
+      if (store.mode === 'google' && frozenShelf.status === 'ready' && !store.freshWarehouseSnapshot()) loadFrozenShelf();
+      else updateFrozenShelf();
+    }
     if (!fridgeOpen && fridgeHistory) history.replaceState(null, '', '#overview');
     if (fridgeOpen && popularityExpanded) loadFridgePopularity();
     return;
@@ -1716,7 +1770,7 @@ document.addEventListener('click', (event) => {
   const action = event.target.closest('[data-action]');
   if (action) {
     event.preventDefault();
-    if (['coffee-arrival','coffee-count','gacha-draw','gacha-replay','gacha-retry','count-kind','batch-arrival','batch-add','batch-remove','snack-details','open-empty-stock','open-snack-stock','snack-new','retry-admin-summary','archive-food-wish','archive-wish','supply-stock-filter','supply-expiry-set','supply-expiry-add','supply-expiry-remove','warehouse-kind','supply-arrival','supply-count','supply-count-kind','supply-expiry-close','close-modal', 'quick-add-drink', 'new-drink', 'new-wish', 'edit-drink', 'edit-wish', 'vote-wish', 'view-wish-supporters', 'view-drink-label', 'login', 'view-drink', 'toggle-door', 'retry-popularity', 'retry-route'].includes(action.dataset.action)) {
+    if (['coffee-arrival','coffee-count','gacha-draw','gacha-replay','gacha-retry','count-kind','batch-arrival','batch-add','batch-remove','snack-details','open-empty-stock','open-snack-stock','snack-new','retry-admin-summary','archive-food-wish','archive-wish','supply-stock-filter','supply-expiry-set','supply-expiry-add','supply-expiry-remove','warehouse-kind','supply-arrival','supply-count','supply-count-kind','supply-expiry-close','close-modal', 'quick-add-drink', 'new-drink', 'new-wish', 'edit-drink', 'edit-wish', 'vote-wish', 'view-wish-supporters', 'view-drink-label', 'login', 'view-drink', 'view-frozen', 'retry-frozen', 'toggle-door', 'retry-popularity', 'retry-route'].includes(action.dataset.action)) {
       if (!busy) runAction(action.dataset.action, action.dataset.id).catch((error) => toast(error.message, true));
     } else withBusy(() => runAction(action.dataset.action, action.dataset.id), action);
   }
@@ -1867,6 +1921,7 @@ async function refreshCurrentView(manual = false) {
     else if (manual || revision !== store.revision) render();
     else updateChrome();
     if(view==='overview'&&fridgeOpen&&!fridgeHistory&&popularityExpanded)loadFridgePopularity();
+    if (manual && view === 'overview' && fridgeOpen) loadFrozenShelf(true);
     if (manual) toast('已讀取最新庫存。');
   } catch (error) {
     if (sequence !== routeSequence || currentView !== view || busy) return;

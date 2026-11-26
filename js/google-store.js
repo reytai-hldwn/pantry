@@ -425,19 +425,19 @@ export class GoogleInventoryStore {
       if (!source || source.length > 350000) return null;
       const stored = JSON.parse(source), age = this.now() - stored.savedAt;
       if (!Number.isFinite(age) || age < 0 || age > 86400000) return null;
-      const { supplies } = normalizeSupplyWarehouse({ supplyEntry: { version: 1, snackVersion: 1 }, supplies: stored.supplies, supplyEvents: [] });
+      const { supplies } = normalizeSupplyWarehouse({ supplyEntry: { version: 1, snackVersion: 1, frozenVersion: 1 }, supplies: stored.supplies, supplyEvents: [] });
       return { supplies, data: { wishes: stored.wishes.map(normalizeGoogleWish) } };
     } catch { return null; }
   }
 
   async readSnackDrawer(force = false) {
     const snapshot = await this.fetchWarehouseSnapshot(force);
-    // Persist only the public drawer projection, never counts, people who
+    // Persist only the public food catalogue, never counts, people who
     // handled stock, stocktake dates, or underlying event history.
     if (snapshot.writeSequence === this.confirmedWriteSequence) try {
       const { supplies, data } = snapshot.result;
       const preview = { savedAt: snapshot.readAt,
-        supplies: supplies.filter(item => ['snack','noodle'].includes(item.kind)).map(({ id, name, kind, unit, active, flavor, category }) => ({ id, name, kind, unit, active, flavor, category, stock: null, lastCountAt: null })),
+        supplies: supplies.filter(item => ['snack','noodle','frozen'].includes(item.kind)).map(({ id, name, kind, unit, active, flavor, category }) => ({ id, name, kind, unit, active, flavor, category, stock: null, lastCountAt: null })),
         wishes: data.wishes.filter(wish => wish.id.startsWith('wish-web-pf-')) };
       const serialized = JSON.stringify(preview);
       if (serialized.length <= 350000) (this.publicStorage || globalThis.localStorage)?.setItem(this.snackDrawerCacheKey(), serialized);
