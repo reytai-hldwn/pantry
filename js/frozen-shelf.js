@@ -16,6 +16,7 @@ export const FROZEN_PRODUCTS = [
   {
     name: '曠世奇派比利時巧克力',
     photo: './assets/frozen/crunch-pie-belgian-display.webp',
+    widePhoto: true,
     photoNote: '商品圖依冰棒與外盒照片調整方向及比例。',
     nutrition: partialNutrition(90, [null, 4.1, 19.6, 8.9, 0, 23.5, 18.8, 70], 'https://online.uni-prosperity.com.tw/zh/%E6%9D%9C%E8%80%81%E7%88%BA/1531100800101.html'),
   },
@@ -23,12 +24,14 @@ export const FROZEN_PRODUCTS = [
     name: '曠世奇派玫瑰鹽焦糖巧克力',
     aliases: ['曠世奇派玫瑰岩礁糖巧克力', '曠世奇派玫瑰岩鹽焦糖巧克力'],
     photo: './assets/frozen/crunch-pie-rose-display.webp',
-    photoNote: '冰棒與外盒依提供的商品圖組合呈現。',
+    widePhoto: true,
+    photoNote: '冰棒搭配新版金色格紋外盒。',
     nutrition: partialNutrition(91, [null, 2.8, 19.5, 11.9, 0, 31.1, 23.6, 161], 'https://online.uni-prosperity.com.tw/zh/%E6%9D%9C%E8%80%81%E7%88%BA/1531101500101.html'),
   },
   {
     name: '曠世奇派草莓',
     photo: './assets/frozen/crunch-pie-strawberry-display.webp',
+    widePhoto: true,
     photoNote: '商品圖依提供的冰棒與外盒照片重製。',
     source: 'https://online.uni-prosperity.com.tw/zh/%E6%9D%9C%E8%80%81%E7%88%BA/1531101400101.html',
   },
@@ -96,7 +99,7 @@ export function findFrozenProduct(name) {
 
 export function renderFrozenProductPhoto(product, { thumbnail = false, detail = false } = {}) {
   if (!product?.photo) return '';
-  return `<img class="frozen-product-photo" src="${h(product.photo)}" width="${thumbnail ? 43 : 136}" height="${thumbnail ? 43 : 136}" alt="${detail ? h(`${product.name}包裝`) : ''}" decoding="async" loading="${detail ? 'eager' : 'lazy'}">`;
+  return `<img class="frozen-product-photo${product.widePhoto && !thumbnail ? ' frozen-product-photo-wide' : ''}" src="${h(product.photo)}" width="${thumbnail ? 43 : 136}" height="${thumbnail ? 43 : 136}" alt="${detail ? h(`${product.name}包裝`) : ''}" decoding="async" loading="${detail ? 'eager' : 'lazy'}">`;
 }
 
 export function renderFrozenShelf(items, { query, selected, status }) {

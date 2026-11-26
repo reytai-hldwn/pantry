@@ -42,7 +42,7 @@ test('drink selection uses only server-confirmed eligible, active IDs and leaves
  const drinks=[{id:'known',name:'可爾必思開心成長160ml',active:true,packaging:'鋁箔包',unit:'包'},{id:'zero',name:'無庫存',active:true},{id:'old',name:'歷史',active:false},{id:'unknown',name:'待盤點',active:true}],before=structuredClone(drinks);
  assert.equal(chooseGachaDrink(drinks,['old','known','known'],()=>0).id,'known');assert.equal(chooseGachaDrink(drinks,[],()=>0),null);
  const state={draw:{...drawGacha({random:()=>0}),drinkId:'known'},loading:false,phase:'ready'},html=renderGacha(state,drinks);
- assert.match(html,/要來一包可爾必思嗎？/);assert.match(html,/160 毫升/);assert.match(html,/data-action="view-drink"/);assert.doesNotMatch(html,/無庫存|歷史|待盤點/);assert.deepEqual(drinks,before);
+ assert.match(html,/<h3>可爾必思<\/h3>/);assert.doesNotMatch(html,/160 毫升|要來一包/);assert.match(html,/data-action="view-drink"/);assert.doesNotMatch(html,/無庫存|歷史|待盤點/);assert.deepEqual(drinks,before);
 });
 
 test('gacha endpoint reveals only eligible IDs and does not create stocktakes, arrivals or sheets',()=>{
@@ -77,7 +77,7 @@ test('the daily snack uses active stock and extends a saved drink and fortune wi
  saveDailyGacha(local, 'daily', draw);
  assert.deepEqual(readDailyGacha(local, 'daily', now), draw);
  const output = renderGacha({ draw }, [{ id: 'tea', name: '綠茶', unit: '瓶' }]);
- assert.match(output, /要來一瓶綠茶嗎/);
+ assert.match(output, /<h3>綠茶<\/h3>/);
  assert.match(output, /今日推薦零食.*洋芋片.*海苔/);
  assert.equal(chooseGachaSnack([{ ...item, stock: 0 }]), null);
 
@@ -111,7 +111,7 @@ test('the emerging note paints above the shell and the ticket waits until the fl
   assert.ok(html.indexOf('class="gacha-capsule-top"')<html.indexOf('class="gacha-capsule-note"'),'SVG paint order keeps the paper above the upper shell');
  }
  const flight=renderGacha({draw,phase:'flying'},drinks);assert.match(flight,/is-flying/);assert.match(flight,/class="gacha-ticket is-awaiting" inert aria-hidden="true"/);
- for(const phase of ['unfolding','ready']){const html=renderGacha({draw,phase},drinks);assert.match(html,/class="gacha-ticket/);assert.match(html,/要來一瓶茶嗎？/);}
+ for(const phase of ['unfolding','ready']){const html=renderGacha({draw,phase},drinks);assert.match(html,/class="gacha-ticket/);assert.match(html,/<h3>茶<\/h3>/);}
 });
 
 

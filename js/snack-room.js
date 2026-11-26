@@ -1,3 +1,5 @@
+import { pantryGuideBubble } from './fridge.js';
+
 export const SNACK_DRAWER_SCENE = './assets/snacks/tea-room-drawer.webp';
 export const snackSceneSize = { width: 1446, height: 1087 };
 // The opening follows the perspective of the actual upper drawer in the illustration.
@@ -21,8 +23,16 @@ export function renderSnackDrawerRoom() {
             <polygon points="${hitPoints.join(' ')}" vector-effect="non-scaling-stroke"></polygon>
           </svg>
         </button>
-        <span class="snack-guide-arrow" aria-hidden="true"></span>
-        <button class="snack-guide" type="button" aria-controls="snack-cabinet" aria-expanded="false">拉開零食抽屜</button>
+        <svg class="snack-guide-arrow" viewBox="0 0 132 112" preserveAspectRatio="none" aria-hidden="true">
+          <g class="guide-hand-arrow">
+            <path d="M126 9 C76 3 44 16 26 43 C13 64 29 75 44 62 C59 48 16 36 11 94"/>
+            <path class="guide-arrow-echo" d="M126 9 C76 3 44 16 26 43 C13 64 29 75 44 62 C59 48 16 36 11 94" transform="translate(.6 .8)"/>
+            <path class="guide-arrowhead" d="M4 87 Q9 89 11 93 Q18 86 22 86 L11 104 Z"/>
+          </g>
+        </svg>
+        <button class="snack-guide" type="button" aria-controls="snack-cabinet" aria-expanded="false" aria-label="拉開零食抽屜">
+          <svg viewBox="0 0 175 110" aria-hidden="true"><path class="guide-bubble" d="${pantryGuideBubble}"/><text x="85" y="60" text-anchor="middle">拉開零食抽屜</text></svg>
+        </button>
       </div>
     </section>
   `;

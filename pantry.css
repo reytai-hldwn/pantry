@@ -331,7 +331,8 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
 @media (max-width: 800px) {
   .gacha-snack:has(.gacha-snack-photo) { grid-template-columns: 76px minmax(0, 1fr); gap: 16px; }
 }
-.gacha-snack-photo + div { grid-column: 2; }
+.gacha-snack-photo { grid-area: 1 / 1; align-self: center; }
+.gacha-snack-photo + div { grid-area: 1 / 2; }
 .gacha-snack-photo .snack-product-art {
   width: 100%;
   height: auto;
@@ -450,52 +451,45 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
 @media (hover: hover) {
   .snack-hit:hover .snack-hit-outline { opacity: 1; }
 }
+.snack-guide, .snack-guide-arrow {
+  --guide-ink: #b68a52;
+  --guide-paper: #fffdf6;
+  position: absolute;
+  transition: opacity .16s ease;
+}
 .snack-guide {
-  position: absolute;
   z-index: 2;
-  top: 58.2%;
-  left: 62.4%;
-  translate: -50% -50%;
-  min-height: 44px;
-  padding: .48em .95em .53em;
-  border: 1.5px solid #9b7045;
-  border-radius: 32% 27% 32% 30% / 39% 49% 45% 42%;
-  background: #fff8e7;
-  color: #654325;
-  font-family: "Pantry Hand", "Pantry Hand Complete", serif;
-  font-size: clamp(18px, 2.45vw, 27px);
-  font-weight: 700;
-  line-height: 1.15;
-  white-space: nowrap;
-  box-shadow: 0 3px 9px #66431a23;
-  transition: opacity .16s ease, background .16s ease;
-}
-.snack-guide:hover { background: #fffdf5; }
-.snack-guide-arrow {
-  position: absolute;
-  z-index: 1;
   top: 59%;
-  left: 44.5%;
-  width: 12.6%;
-  height: 12.5%;
-  border: solid #79512f;
-  border-width: 2px 0 0 2px;
-  border-radius: 76% 0 0 0;
-  filter: drop-shadow(0 1px 0 #fff2cb);
+  left: 61.5%;
+  translate: -50% -50%;
+  width: clamp(96px, 16%, 148px);
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #6e4933;
+}
+.snack-guide svg { display: block; width: 100%; }
+.snack-guide text { fill: currentColor; font: 700 22px var(--heading-font); }
+.snack-guide:hover { --guide-paper: #fff8e7; }
+.snack-guide-arrow {
+  z-index: 1;
+  top: 57.8%;
+  left: 43.7%;
+  width: 13.7%;
+  height: 14.7%;
   pointer-events: none;
-  transition: opacity .14s ease;
 }
-.snack-guide-arrow::after {
-  content: "";
-  position: absolute;
-  left: -6px;
-  bottom: 0;
-  width: 11px;
-  height: 11px;
-  border: solid #79512f;
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
+:is(.snack-guide, .snack-guide-arrow) path {
+  fill: none;
+  stroke: var(--guide-ink);
+  stroke-width: 2.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
+.snack-guide .guide-bubble, .snack-guide-arrow .guide-arrowhead { fill: var(--guide-paper); }
+.snack-guide .guide-bubble, .snack-guide-arrow .guide-hand-arrow { filter: drop-shadow(0 3px 0 #9e75451a); }
+.snack-guide-arrow .guide-arrow-echo { stroke-width: .8; opacity: .25; }
 .snack-room.is-pulling :is(.snack-guide, .snack-hit, .snack-guide-arrow) { opacity: 0; }
 .snack-cabinet {
   padding: 0 11px 12px;
@@ -528,7 +522,7 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
   color: #533926;
 }
 .snack-search { display: flex; align-items: center; gap: 6px; padding-inline: 9px; }
-.snack-cabinet .pantry-category-bar { margin-bottom: 6px; }
+.snack-cabinet > .pantry-pager { margin-bottom: 6px; }
 .snack-search input {
   width: 100%;
   padding: 8px 0;
@@ -556,23 +550,6 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
 .snack-popularity .popularity-heading::after { content: '⌄'; margin-left: auto; color: #866543; }
 .snack-popularity[open] .popularity-heading::after { content: '⌃'; }
 .snack-ranking-content { margin-top: 9px; }
-.snack-ranking-unit { display: flex; justify-content: end; align-items: center; gap: 7px; color: #684a34; font-size: .8rem; }
-.snack-ranking-unit select { min-height: 36px; padding: 4px 7px; }
-.snack-ranking-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin: 8px 0; padding: 0; list-style: none; }
-.snack-ranking-list li {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: baseline;
-  gap: 4px 8px;
-  padding: 8px;
-  border: 1px solid #ead8bc;
-  border-radius: 7px;
-  background: #fffdfa;
-  color: #684a34;
-  font-size: .8rem;
-}
-.snack-rank-name { font-weight: 650; overflow-wrap: anywhere; }
-.snack-ranking-content .text-link { margin-left: 7px; }
 .snack-shelf { padding: 17px 19px 0; }
 .snack-shelf h2 { margin: 0 0 11px; color: #694b33; font-size: 1.08rem; }
 .snack-products {
@@ -596,11 +573,7 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
 }
 .snack-product:hover { border-color: #d4bea1; background: #fffaf0; }
 .snack-product:focus-visible { outline-offset: -2px; }
-.snack-history-card { min-width: 0; display: flex; flex-direction: column; align-items: stretch; }
-.snack-history-actions { display: grid; justify-items: center; gap: 4px; margin: auto 0 0; padding: 4px 1px 10px; }
-.snack-history-actions .wish-vote-button { min-height: 40px; padding: 5px 7px; font-size: .75rem; white-space: normal; }
-.snack-history-actions .wish-vote-count { min-height: 34px; padding: 3px 0; }
-.snack-history-actions .subtle { padding: 3px 0; }
+.snack-product.is-archived .snack-product-art { filter: brightness(.69) saturate(.72); }
 .wish-support-trigger { position: relative; display: inline-flex; align-items: center; }
 .wish-support-tooltip {
   position: absolute;
@@ -625,12 +598,6 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
 @media (hover: hover) {
   .wish-support-trigger:hover .wish-support-tooltip { visibility: visible; }
 }
-.snack-history-actions .wish-support-tooltip {
-  inset-inline: 50% auto;
-  transform: translateX(-50%);
-  max-width: min(148px, 36vw);
-}
-
 .purchased-wishes {
   margin-block: 0 18px;
   padding: 10px 14px 12px;
@@ -828,16 +795,12 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
 @media (max-width: 620px) {
   .snack-room { aspect-ratio: 1.22; border-radius: 11px; }
   .snack-scene { width: auto; left: 50%; transform: translateX(-52%); }
-  .snack-guide { font-size: 17px; }
-  .snack-guide-arrow::after { left: -4.7px; width: 8px; height: 8px; }
   .snack-cabinet { padding-inline: 7px; }
   .snack-controls { flex-wrap: wrap; }
-  .snack-controls .pantry-stock-tabs { flex-basis: 100%; }
   .snack-search { flex: 1 1 calc(100% - 115px); }
   .snack-close { min-height: 36px; }
   .snack-open-heading { padding-inline: 3px; }
   .snack-open-heading .page-description { margin-inline: 0; text-align: left; }
-  .snack-ranking-list { grid-template-columns: 1fr; }
   .snack-shelf { padding: 13px 8px 0; }
   .snack-products { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .snack-shelf-rail { margin-inline: -8px; }
@@ -922,3 +885,44 @@ body[data-view=overview] main{max-width:none;padding:29px 34px 12px}
 }
 @keyframes pantry-skeleton-pulse { from { opacity: .65; } to { opacity: 1; } }
 @keyframes pantry-card-entry { from { opacity: 0; translate: 0 7px; } to { opacity: 1; translate: 0 0; } }
+
+.pantry-pager {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+.pantry-pager [data-pantry-page-track] {
+  min-width: 0;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+.pantry-page-arrow {
+  display: grid;
+  place-items: center;
+  min-width: 34px;
+  min-height: 36px;
+  padding: 0;
+  border: 1px solid #dcc7a8;
+  border-radius: 8px;
+  background: #fffaf2;
+  color: #745333;
+  font: 24px/1 system-ui, sans-serif;
+}
+.pantry-page-arrow:hover { background: #f6ecdc; }
+.popularity-cards[data-pantry-page-track] {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-columns: none;
+  grid-auto-columns: calc((100% - 24px) / 3);
+  scroll-snap-type: x proximity;
+}
+.popularity-cards[data-pantry-page-track] .popular-drink { scroll-snap-align: start; }
+.popular-name small { display: block; font-size: .8em; font-weight: 400; }
+.snack-popularity { padding: 10px 11px 12px; }
+.snack-group-restock { display: flex; margin-top: 8px; align-items: center; }
+.history-tabs { margin-bottom: 14px; }
+.ranking-flavor { display: block; font-size: .86em; font-weight: 500; }
+@media (max-width: 660px) {
+  .popularity-cards[data-pantry-page-track] { grid-auto-columns: minmax(125px, 73%); }
+}

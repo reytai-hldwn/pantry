@@ -182,3 +182,5 @@
 .frozen-shelf-message { margin: 0 6px 13px; font-size: .8rem; }
 .frozen-detail-art { display: flex; justify-content: center; margin: 0 0 12px; }
 .purchased-wish-art .frozen-product-photo { max-width: 43px; max-height: 43px; }
+
+.frozen-shelf .frozen-product-photo-wide { width: min(100%, 151px); max-height: 138px; }

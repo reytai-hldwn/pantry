@@ -100,6 +100,7 @@ function renderOfficeRecess(variant, drinks) {
     const products = drinks.slice(row * 3, row * 3 + 3).map((drink, index) => {
       const photo = findProductPhoto(drink.name);
       if (!photo) return '';
+      if (photo.frontSrc) return `<image x="${24 + index * 41}" y="${31 + row * 84}" width="30" height="61" preserveAspectRatio="xMidYMax meet" data-scene-src="${h(photo.frontSrc)}"/>`;
       const [x, y, width, height] = photo.crop || [0, 0, 84, photo.height];
       const [originalWidth, originalHeight] = photo.originalSize || [84, photo.height];
       const clipId = `pantry-recess-${variant}-${row}-${index}`;
@@ -135,8 +136,10 @@ function syncGuideArrow(svg, endX, endY) {
   svg.querySelector('.guide-arrowhead').setAttribute('d', `M${endX - 15} ${endY - 9} Q${endX - 5} ${endY - 4} ${endX + 2} ${endY} Q${endX - 5} ${endY + 5} ${endX - 16} ${endY + 10} L${endX - 12} ${endY + 1} Z`);
 }
 
+export const pantryGuideBubble = 'M20 72 C3 77 -4 57 8 47 C-1 32 11 18 25 20 C27 3 48 -1 59 13 C70 1 92 2 100 15 C113 4 133 12 136 26 C154 21 169 34 163 49 C179 61 169 82 153 82 C151 98 130 105 117 94 C105 108 83 106 75 95 C59 106 40 99 38 87 C22 92 10 86 20 72 Z';
+
 function renderFridgeGuide(isOpen) {
-  const artwork = (variant, width) => `<svg class="fridge-guide-${variant}" viewBox="0 0 ${width} 140" aria-hidden="true" focusable="false"><g class="guide-hand-arrow"><path class="guide-arrow"/><path class="guide-arrow guide-arrow-echo" transform="translate(.6 .8)"/><path class="guide-arrowhead"/></g><path class="guide-bubble" d="M20 72 C3 77 -4 57 8 47 C-1 32 11 18 25 20 C27 3 48 -1 59 13 C70 1 92 2 100 15 C113 4 133 12 136 26 C154 21 169 34 163 49 C179 61 169 82 153 82 C151 98 130 105 117 94 C105 108 83 106 75 95 C59 106 40 99 38 87 C22 92 10 86 20 72 Z"/><text x="85" y="60" text-anchor="middle">點擊打開冰箱</text></svg>`;
+  const artwork = (variant, width) => `<svg class="fridge-guide-${variant}" viewBox="0 0 ${width} 140" aria-hidden="true" focusable="false"><g class="guide-hand-arrow"><path class="guide-arrow"/><path class="guide-arrow guide-arrow-echo" transform="translate(.6 .8)"/><path class="guide-arrowhead"/></g><path class="guide-bubble" d="${pantryGuideBubble}"/><text x="85" y="60" text-anchor="middle">點擊打開冰箱</text></svg>`;
   return `<button type="button" class="fridge-open-guide" data-action="toggle-door" aria-label="點擊打開冰箱" aria-controls="${FRIDGE_CONTENT_ID}" aria-expanded="${isOpen}"${isOpen ? ' hidden inert' : ''}>${artwork('wide', 330)}${artwork('portrait', 300)}</button>`;
 }
 const FRIDGE_SHELF_LABELS = {
@@ -185,10 +188,11 @@ function fridgeIconFor(category) {
 /** Packaging is visual: a drawing never represents a number of containers. */
 export function drinkPack(drink, { defer = false, fullSize = false, thumbnail = false } = {}) {
   const photo = findProductPhoto(drink.name);
-  const source = photo ? h(fullSize ? photo.src : photo.displaySrc || photo.src) : '';
+  const front = !fullSize && photo?.frontSrc;
+  const source = photo ? h(fullSize ? photo.src : front || photo.displaySrc || photo.src) : '';
   const sourceAttribute = `${defer ? 'data-product-src' : 'src'}="${source}"`;
   const photoScale = (drink.packaging === '小型鐵罐' ? 0.8 : 1) * (thumbnail && photo ? 41 / Math.max(photo.height, 84) : 1);
-  if (photo?.crop && photo.originalSize) {
+  if (!front && photo?.crop && photo.originalSize) {
     const [x, y, width, height] = photo.crop;
     const [originalWidth, originalHeight] = photo.originalSize;
     const scale = Math.min(84 / width, photo.height / height) * photoScale;
@@ -235,27 +239,44 @@ function renderFridgeProduct(drink, showQuantities, dateLabel, defer) {
   return `<article class="fridge-product${classes}${archived ? ' is-archived' : ''}" data-drink-id="${h(drink.id)}"${archived ? ` data-archived-drink-id="${h(drink.id)}"` : ''}><div class="fridge-product-stage">${drinkPack(drink, { defer })}${quantity}</div><div class="fridge-product-info"><h4>${h(label)}</h4><p class="fridge-product-packaging">${h(drink.packaging || '飲料包裝')}</p>${inventory}</div><button type="button" class="fridge-product-edit" data-action="view-drink" data-id="${h(drink.id)}" aria-label="查看${h(label)}飲料資訊${archived ? '，歷史品項' : ''}"><span class="fridge-detail-arrow" aria-hidden="true"></span></button></article>`;
 }
 
-export function renderFridgePopularity(summary, { loading = false, error = false } = {}) {
-  if (!summary) return `<p class="popularity-status" role="status">${error ? '人氣統計暫時讀取不到。<button type="button" data-action="retry-popularity" class="text-link">再試一次</button>' : '正在整理飲用紀錄…'}</p>`;
-  if (!summary.rows.length) return `<p class="popularity-status">${summary.observedProducts ? '這段期間尚未觀察到飲用量，下次盤點後再來看看。' : '累積紀錄中，下次盤點後再來看看。'}</p>`;
-  const maximum = summary.rows[0].weeklyRate;
-  const formatter = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 1 });
-  const date=new Intl.DateTimeFormat('zh-TW',{timeZone:'Asia/Taipei',year:'numeric',month:'numeric',day:'numeric'});
-  const period=summary.windowStartAt&&summary.windowEndAt?`${date.format(new Date(summary.windowStartAt))}–${date.format(new Date(summary.windowEndAt))}`:'最近30天';
-  return `<div class="popularity-cards">${summary.rows.map((row, index) => `<button type="button" class="popular-drink" data-action="view-drink" data-id="${h(row.id)}"><span class="popularity-rank">${index + 1}</span><span class="popularity-name">${h(row.name)}</span><span class="popularity-amount">約 <strong>${row.weeklyRate < .1 ? '少於 0.1' : formatter.format(row.weeklyRate)}</strong> ${h(row.unit)}／週</span><span class="popularity-bar" aria-hidden="true"><i style="width:${(row.weeklyRate / maximum * 100).toFixed(1)}%"></i></span></button>`).join('')}</div><p class="popularity-note">${h(period)} · 依實際盤點與入庫紀錄估算${loading ? ' · 更新中' : error ? ' · 更新暫時中斷' : ''}。</p>`;
-}
-
-export function renderPantryStockTabs(archived = false) {
-  return `<div class="filter-tabs pantry-stock-tabs" role="group" aria-label="供應狀態">
-    <button type="button" class="filter-tab${archived ? '' : ' selected'}" data-pantry-stock="current" aria-pressed="${!archived}">供應中</button>
-    <button type="button" class="filter-tab${archived ? ' selected' : ''}" data-pantry-stock="history" aria-pressed="${archived}">歷史品項</button>
+export function renderPantryPager(track, label) {
+  return `<div class="pantry-pager" role="group" aria-label="${h(label)}">
+    <button type="button" data-pantry-page="-1" class="pantry-page-arrow" aria-label="向左查看${h(label)}">‹</button>
+    ${track}
+    <button type="button" data-pantry-page="1" class="pantry-page-arrow" aria-label="向右查看${h(label)}">›</button>
   </div>`;
 }
 
-export function renderPantryCategoryBar(categories, selected = '', label = '商品分類') {
-  return `<div class="pantry-category-bar" role="group" aria-label="${h(label)}">${['', ...categories].map(category =>
+export function movePantryPager(button) {
+  const track = button.closest('.pantry-pager')?.querySelector('[data-pantry-page-track]');
+  if (!track || !track.firstElementChild) return;
+  const gap = Number.parseFloat(getComputedStyle(track).columnGap) || 0;
+  const distance = track.classList.contains('pantry-category-bar') ? track.clientWidth * .75 : track.firstElementChild.offsetWidth + gap;
+  track.scrollBy({
+    left: Number(button.dataset.pantryPage) * distance,
+    behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+  });
+}
+
+export function renderFridgePopularity(summary, { loading = false, error = false, snack = false } = {}) {
+  if (!summary) return `<p class="popularity-status" role="status">${error ? '人氣統計暫時讀取不到。<button type="button" data-action="retry-popularity" class="text-link">再試一次</button>' : '正在整理飲用紀錄…'}</p>`;
+  if (!summary.rows.length) return `<p class="popularity-status" role="status">${summary.observedProducts ? '這段期間尚未觀察到消耗。' : '累積盤點紀錄中，下次盤點後再來看看。'}</p>`;
+  const maximum = summary.rows[0].weeklyRate;
+  const formatter = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 1 });
+  const track = `<div class="popularity-cards" data-pantry-page-track>${summary.rows.slice(0, 10).map((row, index) => {
+    const content = `<span class="popularity-rank" aria-label="第 ${index + 1} 名">${index + 1}</span><span class="popular-name">${h(snack ? row.name : fridgeDisplayName(row.name))}${row.flavor ? `<small>${h(row.flavor)}</small>` : ''}</span>
+      <span class="popular-amount">約 <strong>${row.weeklyRate < .1 ? '少於 0.1' : formatter.format(row.weeklyRate)}</strong> ${h(row.unit)}／週</span>
+      <span class="popularity-bar" aria-hidden="true"><i style="width:${Math.max(1, Math.round(row.weeklyRate / maximum * 100))}%"></i></span>`;
+    return snack ? `<article class="popular-drink">${content}</article>` : `<button type="button" class="popular-drink" data-action="view-drink" data-id="${h(row.id)}">${content}</button>`;
+  }).join('')}</div>`;
+  return `${renderPantryPager(track, '排行榜')}<p class="popularity-note">滾動 90 天 · 按確認有貨的時間換算每 5 個工作日${loading ? ' · 更新中' : error ? ' · 更新暫時中斷' : ''}。</p>`;
+}
+
+export function renderPantryCategoryBar(categories, selected = '', label = '商品分類', paged = false) {
+  const track = `<div class="pantry-category-bar" role="group" aria-label="${h(label)}"${paged ? ' data-pantry-page-track' : ''}>${['', ...categories].map(category =>
     `<button class="pantry-category-button" type="button" data-pantry-category="${h(category)}" aria-pressed="${category === selected}">${h(category || '全部')}</button>`
   ).join('')}</div>`;
+  return paged ? renderPantryPager(track, label) : track;
 }
 
 export function selectPantryCategory(bar, category) {
@@ -334,7 +355,7 @@ export function renderFridge(drinks, { isOpen = false, lastInventoryAt = null, s
   })).filter(shelf => shelf.drinks.length) : [];
   const logoSrc = typeof document === 'undefined' ? '' : (document.querySelector('.brand-mark')?.getAttribute('src') || '');
   const logo = (className, size) => logoSrc ? `<img class="${className}" src="${h(logoSrc)}" alt="Holdwin Capital H 標誌" width="${size}" height="${size}">` : '';
-  const popularityPanel = showDrinks ? `<details class="fridge-popularity"${loading ? ' hidden' : ''}${popularityOpen ? ' open' : ''}><summary class="popularity-heading"><div><span class="popularity-eyebrow">PANTRY FAVORITES</span><h2>大家最近愛喝什麼？</h2></div><span class="popularity-period">每週</span></summary><div data-popularity-content>${renderFridgePopularity(popularity, { loading: popularityLoading, error: popularityError })}</div></details>` : '';
+  const popularityPanel = showDrinks ? `<details class="fridge-popularity"${loading ? ' hidden' : ''}${popularityOpen ? ' open' : ''}><summary class="popularity-heading"><div><span class="popularity-eyebrow">PANTRY FAVORITES</span><h2>大家最近愛喝什麼？</h2></div><span class="popularity-period">90 天</span></summary><div data-popularity-content>${renderFridgePopularity(popularity, { loading: popularityLoading, error: popularityError })}</div></details>` : '';
   const drinkShelves = shelves.map((shelf, index) => `<section class="fridge-shelf" aria-label="${h(shelf.name)}飲料架"><div class="fridge-shelf-heading"><span class="shelf-index">0${index + 1}</span><h3>${h(shelf.name)}</h3>${showQuantities ? `<span class="shelf-count">${shelf.drinks.length} 種飲料</span>` : ''}</div><div class="fridge-products">${shelf.drinks.map(drink => renderFridgeProduct(drink, showQuantities, dateLabel, !isOpen)).join('')}</div><div class="fridge-shelf-rail"><span>${h(FRIDGE_SHELF_LABELS[shelf.name] || 'PANTRY FAVORITES')}</span><i aria-hidden="true"></i><span class="shelf-rail-note">喜歡的，留一瓶給同事。</span></div></section>`).join('');
   const noDrinks = loading ? renderPantryShelfSkeleton('正在讀取冰箱裡的飲料…', 'fridge-loading', 3)
     : '<div class="empty-state"><h2>這一格還沒有飲料</h2><p>換個分類或關鍵字看看。</p></div>';

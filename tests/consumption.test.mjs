@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CONSUMPTION_KINDS, buildConsumptionRecords, consumptionPeriod, selectConsumption } from '../js/consumption.js';
+import { CONSUMPTION_KINDS, buildConsumptionRecords, consumptionPeriod, selectConsumption, stockPopularity } from '../js/consumption.js';
 import { renderConsumptionControls, renderConsumptionResults } from '../js/consumption-view.js';
 const day=86400000,now=Date.parse('2026-11-03T12:00:00Z');
 const item=(id,unit='包',extra={})=>({id,name:id,category:'茶飲',unit,active:true,...extra});
@@ -39,7 +39,7 @@ test('rankings isolate kinds, units, history and flavors, with stable ties and n
  const drinks=selectConsumption(rows,{kind:'drink',unit:'包'});assert.equal(drinks.ranked.length,2);assert.deepEqual(drinks.ranked.map(row=>row.id),['包裝乙','包裝甲'].sort((a,b)=>a.localeCompare(b,'zh-TW')));
  assert.equal(selectConsumption(rows,{kind:'drink',unit:'罐'}).ranked.length,1);assert.equal(selectConsumption(rows,{kind:'drink',unit:'包',archived:true}).ranked.length,3);
  const snack=selectConsumption(rows,{kind:'snack',query:'起司',category:'太空包'});assert.equal(snack.ranked.length,1);assert.equal(snack.ranked[0].id,'s1');const html=renderConsumptionResults(snack);assert.match(html,/同品項的其他口味/);assert.match(html,/海苔/);assert.match(html,/盤點 20 ＋入庫 0 −盤點 13 ＝ 7 包/);assert.deepEqual(rows,before);
- const controls=renderConsumptionControls(snack,{days:90,archived:false});assert.match(controls,/比較單位/);assert.match(controls,/所有分類/);
+ const controls=renderConsumptionControls(snack,{days:90,archived:false});assert.doesNotMatch(controls,/比較單位/);assert.match(controls,/所有分類/);
 });
 
 test('new catalog items render honest readiness, escaped labels and a stocktaking link',()=>{
@@ -92,9 +92,9 @@ test('short working-day observations show usage beside the five-day extrapolatio
  assert.equal(rows[0].weekly,50);
  const html=renderConsumptionResults(selectConsumption(rows,{kind:'drink'}));
  assert.match(html,/換算每工作週/);
- assert.match(html,/觀察 2 個工作日 · 消耗 20 包/);
+ assert.match(html,/觀察 2 個有貨工作日 · 消耗 20 包/);
  assert.match(html,/未滿5個工作日，先看趨勢/);
- assert.match(html,/並非最近5個工作日實際用量/);
+ assert.match(html,/分母採計有貨工作日/);
  const weekly=consumptionPeriod(buildConsumptionRecords(data(7),until),{now:until});
  assert.equal(weekly[0].observedDays,5);
  assert.doesNotMatch(renderConsumptionResults(selectConsumption(weekly,{kind:'drink'})),/未滿5個工作日，先看趨勢/);
@@ -112,10 +112,30 @@ test('default month rolls forward and omits intervals crossing its start boundar
  assert.equal(row.consumed,20);
  assert.equal(row.observedDays,5);
  assert.equal(row.weekly,20);
- const html=renderConsumptionResults(selectConsumption([row]),{now:until});
+ const html=renderConsumptionResults(selectConsumption([row]),{days:30,now:until});
  assert.match(html,/最近 30 天 · 滾動統計/);
  assert.match(html,/2026\/10\/5–2026\/11\/4/);
  const [next]=consumptionPeriod(records,{now:until+day});
  assert.equal(next.weekly,null);
  assert.equal(next.consumed,0);
+});
+
+test('90-day rankings omit confirmed zero-stock days and compare snack pieces across units', () => {
+  const until = Date.parse('2026-11-20T09:00:00+08:00');
+  const supplies = [
+    item('sticks', '條', { kind: 'snack', name: '測試巧克力', flavor: '原味', active: false }),
+    item('bags', '包', { kind: 'snack', name: '測試餅乾' }),
+  ];
+  const supplyEvents = [
+    ['sticks', 'count', 0, '2026-09-07'],
+    ['sticks', 'count', 0, '2026-10-01'],
+    ['sticks', 'restock', 20, '2026-11-16'],
+    ['sticks', 'count', 0, '2026-11-20'],
+    ['bags', 'restock', 30, '2026-11-13'],
+    ['bags', 'count', 10, '2026-11-20'],
+  ].map(([supplyId, type, quantity, stamp]) => ({ supplyId, type, quantity, createdAt: stamp + 'T09:00:00+08:00' }));
+  const { observedProducts, rows } = stockPopularity({ supplies, supplyEvents }, 'snack', until);
+  assert.equal(observedProducts, 2);
+  assert.deepEqual(rows.map(({ id, unit, flavor, weeklyRate }) => [id, unit, flavor, weeklyRate]),
+    [['sticks', '條', '原味', 25], ['bags', '包', undefined, 20]]);
 });

@@ -66,8 +66,14 @@ test('new drink photos preserve source pixels, remove exterior backgrounds and u
     assert.equal(display.subarray(8, 12).toString(), 'WEBP');
     assert.ok(display.length < 50000, 'shelf photo stays small');
     const markup = drinkPack({ name, packaging: '其他' });
-    assert.match(markup, /clip-path:polygon\(/);
-    assert.ok(markup.includes(photo.displaySrc));
+    if (photo.frontSrc) {
+      const front = await readFile(new URL('../' + photo.frontSrc, import.meta.url));
+      assert.ok(front.length < 50000);
+      assert.ok(markup.includes(photo.frontSrc));
+    } else {
+      assert.match(markup, /clip-path:polygon\(/);
+      assert.ok(markup.includes(photo.displaySrc));
+    }
     assert.ok(drinkPack({ name }, { fullSize: true }).includes(photo.src));
     assert.doesNotMatch(markup, /https:\/\//, 'viewing the fridge never contacts a merchant');
     assert.match(drinkPack({ name }, { defer: true }), /data-product-src=/);

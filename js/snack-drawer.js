@@ -1,9 +1,9 @@
 import { escapeHtml as h } from './domain.js';
 import { renderFoodNutrition } from './food-nutrition.js';
-import { buildConsumptionRecords, consumptionPeriod, selectConsumption } from './consumption.js';
-import { SNACK_CATEGORIES, supplyLabel, supplyNameKey } from './supplies.js';
+import { stockPopularity } from './consumption.js';
+import { SNACK_CATEGORIES, supplyNameKey } from './supplies.js';
 import { SNACK_DRAWER_PRODUCTS } from './snack-drawer-catalog.js';
-import { renderPantryStockTabs, renderPantryCategoryBar, selectPantryCategory, renderPantryShelfSkeleton, bindPantryShelfBounce } from './fridge.js';
+import { renderFridgePopularity, renderPantryCategoryBar, selectPantryCategory, renderPantryShelfSkeleton, bindPantryShelfBounce } from './fridge.js';
 import { archivedFoodWishId } from './wish-support.js';
 import { snackDrawerCorners, snackDrawerCrop } from './snack-room.js';
 
@@ -61,9 +61,9 @@ export function renderPurchasedSnackArt(wish, outlineId) {
 }
 
 function snackProductCard(product) {
-  const { key, name, flavors, imageCaption, photos } = product;
-  return `<button class="snack-product" type="button" data-snack-product-key="${h(key)}">
-    ${photos.length ? snackProductArt(product, `outline-${key}`) : '<span class="snack-product-art snack-art-unavailable">商品圖片待補</span>'}
+  const { lookupKey, name, flavors, imageCaption, photos, archived } = product;
+  return `<button class="snack-product${archived ? ' is-archived' : ''}" type="button" data-snack-product-key="${h(lookupKey)}"${archived ? ` aria-label="${h(name + (flavors ? ` ${flavors}` : '') + '，歷史品項')}"` : ''}>
+    ${photos.length ? snackProductArt(product, `outline-${lookupKey}`) : '<span class="snack-product-art snack-art-unavailable">商品圖片待補</span>'}
     <span class="snack-product-title">${h(name)}${flavors ? `<small>${h(flavors)}</small>` : ''}${imageCaption ? `<small>${h(imageCaption)}</small>` : ''}</span>
   </button>`;
 }
@@ -97,7 +97,7 @@ export function stockDrawerProducts(supplies, archived) {
   });
 }
 
-function snackShelves(products, search, selected, historyActions) {
+function snackShelves(products, search, selected) {
   const terms = normalizeSnackSearch(search).trim().split(/\s+/).filter(Boolean);
   const shelves = drawerCategories.map((category, index) => {
     if (selected && selected !== category) return '';
@@ -109,22 +109,20 @@ function snackShelves(products, search, selected, historyActions) {
     if (!items.length) return '';
     return `<section class="snack-shelf" aria-labelledby="snack-shelf-${index}">
       <h2 id="snack-shelf-${index}">${h(category)}</h2>
-      <div class="snack-products">${items.map(product => historyActions
-        ? `<article class="snack-history-card">${snackProductCard(product)}${historyActions(product)}</article>`
-        : snackProductCard(product)).join('')}</div>
+      <div class="snack-products">${items.map(snackProductCard).join('')}</div>
       <div class="snack-shelf-rail" aria-hidden="true"></div>
     </section>`;
   }).join('');
   return shelves || '<p class="snack-empty" role="status">找不到符合的品項。</p>';
 }
 
-function openDrawerProduct(product, showDetails) {
+function openDrawerProduct(product, showDetails, wishActions = '') {
   const details = product.details.map(({ flavor, nutrition, ingredients }) => {
     const ingredientList = ingredients ? `<details><summary>成分</summary><p>${h(ingredients)}</p></details>` : '';
     return `<section>${flavor ? `<h3>${h(flavor)}</h3>` : ''}${renderFoodNutrition(nutrition)}${ingredientList}</section>`;
   }).join('');
   const photoNote = product.photoNote ? `<p class="subtle">${h(product.photoNote)}</p>` : '';
-  showDetails(h(product.name), h(product.category), `<div class="snack-nutrition">${details}${photoNote}</div>`);
+  showDetails(h(product.name), h(product.category), `${wishActions}<div class="snack-nutrition">${details}${photoNote}</div>`);
 }
 
 function snackDrawerPath(context, points) {
@@ -227,21 +225,8 @@ async function animateSnackPull(scene, contents, from, to) {
   });
 }
 
-export function snackDrawerRankings({ supplies, supplyEvents }, now = Date.now()) {
-  const snacks = supplies.filter(item => item.kind === 'snack');
-  const measured = consumptionPeriod(buildConsumptionRecords({ supplies: snacks, supplyEvents }, now), { now });
-  const { units } = selectConsumption(measured, { kind: 'snack' });
-  return units.map(unit => {
-    const { ranked, observed } = selectConsumption(measured, { kind: 'snack', unit });
-    return { unit, observed, rows: ranked.slice(0, 3).map(item => ({ label: supplyLabel(item), weekly: item.weekly })) };
-  });
-}
-
-const snackRateFormatter = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 1 });
-
-function renderSnackRanking({ unit, observed, rows } = {}) {
-  if (!rows?.length) return `<p class="popularity-status" role="status">${observed ? '這段期間尚未觀察到消耗量。' : '累積盤點紀錄中，下次盤點後再來看看。'}</p>`;
-  return `<ol class="snack-ranking-list">${rows.map((row, index) => `<li><span class="popularity-rank" aria-hidden="true">${index + 1}</span><span class="snack-rank-name">${h(row.label)}</span><span>約 <strong>${row.weekly < .1 ? '少於 0.1' : snackRateFormatter.format(row.weekly)}</strong> ${h(unit)}／週</span></li>`).join('')}</ol><p class="popularity-note">最近 30 天 · 依實際盤點和入庫紀錄估算，每週以 5 個工作日計。</p>`;
+export function snackDrawerRankings(data, now = Date.now()) {
+  return stockPopularity(data, 'snack', now);
 }
 
 export function mountSnackDrawer(root, showDetails, readWarehouse, historyActions, { preview, initialRead } = {}) {
@@ -249,16 +234,15 @@ export function mountSnackDrawer(root, showDetails, readWarehouse, historyAction
     <section class="snack-cabinet" id="snack-cabinet" aria-label="抽屜內的零食" hidden>
       <header class="snack-open-heading pantry-heading"><h2>今天，吃點什麼</h2><p class="page-description">想吃點鹹的，還是來點甜的？挑一份喜歡的零食，休息一下。</p></header>
       <div class="snack-controls">
-        ${renderPantryStockTabs()}
         <label class="snack-search"><span aria-hidden="true">⌕</span><input type="search" maxlength="80" aria-label="搜尋零食或泡麵" placeholder="搜尋品名或口味"></label>
         <button class="button button-small button-outline snack-close" type="button">推回抽屜</button>
       </div>
-      ${renderPantryCategoryBar(drawerCategories, '', '零食與泡麵分類')}
+      ${renderPantryCategoryBar(drawerCategories, '', '零食與泡麵分類', true)}
       <p class="snack-inventory-status subtle" role="status" hidden></p>
       <div class="snack-tray" role="region" aria-label="零食分類" tabindex="0">
         <div data-shelf-content>
         <details class="snack-popularity">
-          <summary class="popularity-heading"><h3>大家最近愛吃什麼？</h3><span class="popularity-period">每週</span></summary>
+          <summary class="popularity-heading"><h3>大家最近愛吃什麼？</h3><span class="popularity-period">90 天</span></summary>
           <div class="snack-ranking-content"></div>
         </details>
         <div class="snack-shelves">${renderPantryShelfSkeleton('正在讀取庫存…')}</div>
@@ -286,10 +270,8 @@ export function mountSnackDrawer(root, showDetails, readWarehouse, historyAction
   const status = cabinet.querySelector('.snack-inventory-status');
   const popularity = tray.querySelector('.snack-popularity');
   const rankingContent = tray.querySelector('.snack-ranking-content');
-  const tabs = [...cabinet.querySelectorAll('[data-pantry-stock]')];
   let opener;
   let moving = false;
-  let archived = false;
   let selectedCategory = '';
   let warehouse = preview;
   let warehouseIsPreview = Boolean(preview);
@@ -302,21 +284,18 @@ export function mountSnackDrawer(root, showDetails, readWarehouse, historyAction
       rankingContent.innerHTML = `<p class="popularity-status" role="status">${warehouseRequest ? '正在讀取零食盤點紀錄…' : '排行榜暫時無法讀取。'}</p>`;
       return;
     }
-    const rankings = snackDrawerRankings(warehouse);
-    const selected = rankingContent.querySelector('select')?.value;
-    const initial = rankings.find(group => group.unit === selected) ?? rankings.find(group => group.rows.length) ?? rankings[0];
-    const options = rankings.map(({ unit }) => `<option value="${h(unit)}"${unit === initial?.unit ? ' selected' : ''}>${h(unit)}</option>`).join('');
-    rankingContent.innerHTML = `${rankings.length > 1 ? `<label class="snack-ranking-unit">依單位 <select>${options}</select></label>` : ''}<div class="snack-ranking-results">${renderSnackRanking(initial)}</div>`;
-    rankingContent.querySelector('select')?.addEventListener('change', event => {
-      rankingContent.querySelector('.snack-ranking-results').innerHTML = renderSnackRanking(rankings.find(group => group.unit === event.target.value));
-    });
+    rankingContent.innerHTML = renderFridgePopularity(snackDrawerRankings(warehouse), { snack: true });
   }
 
   function renderTray() {
     if (!warehouse || cabinet.hidden) return;
-    const items = stockDrawerProducts(warehouse.supplies, archived);
-    products = new Map(items.map(product => [product.key, product]));
-    shelves.innerHTML = snackShelves(items, search.value, selectedCategory, archived && (product => historyActions(product, warehouse.data?.wishes || [])));
+    const active = stockDrawerProducts(warehouse.supplies, false).map(product => ({ ...product, lookupKey: product.key }));
+    const history = stockDrawerProducts(warehouse.supplies, true).map(product => ({
+      ...product, lookupKey: `archive-${product.key}`, archived: true,
+    }));
+    const items = [...active, ...history];
+    products = new Map(items.map(product => [product.lookupKey, product]));
+    shelves.innerHTML = snackShelves(items, search.value, selectedCategory);
     tray.scrollTop = 0;
   }
 
@@ -347,29 +326,12 @@ export function mountSnackDrawer(root, showDetails, readWarehouse, historyAction
     return warehouseRequest;
   }
 
-  function setArchived(value) {
-    if (value === archived) return;
-    archived = value;
-    search.value = '';
-    selectedCategory = '';
-    selectPantryCategory(categoryBar, selectedCategory);
-    categoryBar.scrollLeft = 0;
-    popularity.hidden = archived;
-    for (const tab of tabs) {
-      const selected = (tab.dataset.pantryStock === 'history') === archived;
-      tab.classList.toggle('selected', selected);
-      tab.setAttribute('aria-pressed', String(selected));
-    }
-    renderTray();
-  }
-
   async function moveSnackDrawer(open, trigger) {
     if (moving || open === room.hidden) return;
     moving = true;
     for (const button of openers) button.setAttribute('aria-disabled', 'true');
     if (open) {
       opener = trigger;
-      setArchived(false);
       if (Date.now() - lastReadAt >= 30000) refreshInventory().catch(() => {});
       room.classList.add('is-pulling');
       await animateSnackPull(room, contents, 0, 1);
@@ -400,7 +362,6 @@ export function mountSnackDrawer(root, showDetails, readWarehouse, historyAction
 
   for (const button of openers) button.addEventListener('click', () => moveSnackDrawer(true, button));
   for (const button of [close, root.querySelector('.snack-drawer-face')]) button.addEventListener('click', () => moveSnackDrawer(false));
-  for (const tab of tabs) tab.addEventListener('click', () => setArchived(tab.dataset.pantryStock === 'history'));
   search.addEventListener('input', renderTray);
   categoryBar.addEventListener('click', event => {
     const button = event.target.closest('[data-pantry-category]');
@@ -412,15 +373,20 @@ export function mountSnackDrawer(root, showDetails, readWarehouse, historyAction
   popularity.addEventListener('toggle', () => { if (popularity.open) renderRankings(); });
   tray.addEventListener('click', event => {
     const product = products.get(event.target.closest('[data-snack-product-key]')?.dataset.snackProductKey);
-    if (product) openDrawerProduct(product, showDetails);
+    if (!product) return;
+    const wishlist = product.archived ? historyActions(product, warehouse.data?.wishes || []) : '';
+    openDrawerProduct(product, showDetails, wishlist);
   });
   if (initialRead) refreshInventory(false, initialRead).catch(() => {});
   return {
     refreshInventory,
-    archivedProduct: key => archived ? products.get(key) : null,
+    archivedProduct: key => {
+      const product = products.get(key);
+      return product?.archived ? product : null;
+    },
     archiveWish: id => warehouse?.data?.wishes?.find(wish => wish.id === id),
     updateArchiveWishes() {
-      if (!archived) return;
+      if (cabinet.hidden) return;
       const scroll = tray.scrollTop;
       renderTray();
       tray.scrollTop = scroll;

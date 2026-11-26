@@ -20,11 +20,11 @@ test('fridge retains beverage categories and orders packaging within each catego
   assert.deepEqual(ids,expected);
  }
  assert.match(html,/<details class="fridge-popularity">/);
- assert.match(html,/class="popularity-period">每週</);
+ assert.match(html,/class="popularity-period">90 天</);
  assert.doesNotMatch(html,/每5個工作日/);
  assert.deepEqual(drinks,before);
  const content=renderFridgePopularity({rows:[{id:'a',name:'測試',weeklyRate:5,unit:'包'}]});
- assert.match(content,/包／週/);assert.doesNotMatch(content,/工作週|5個工作日|週一至週五/);
+ assert.match(content,/包／週/);assert.match(content,/確認有貨的時間換算每 5 個工作日/);
 });
 
 test('a single shelf places available drinks first and keeps the specified soy and rice cartons adjacent', () => {

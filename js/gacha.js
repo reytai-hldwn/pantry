@@ -1,7 +1,6 @@
 import { escapeHtml as h } from './domain.js';
 import { fridgeDisplayName } from './catalog.js';
 import { drinkPack } from './fridge.js';
-import { findDrinkInformation } from './drink-information.js';
 import { SNACK_CATEGORIES } from './supplies.js';
 
 // IDs are saved with the daily result; keep them stable when editing copy.
@@ -140,7 +139,7 @@ export function renderGacha(state,drinks) {
   const draw=state.draw,fortune=draw?gachaFortuneMap.get(draw.fortuneId):null,drink=draw?.drinkId?drinks.find(drink=>drink.id===draw.drinkId):null;
   const phase=state.phase||'ready',pending=['spinning','opening','flying'].includes(phase),unfolding=phase==='unfolding',arriving=phase==='flying';
   const label=fortune?.kind==='pause'?'宇宙小暫停':'今日補給';
-  const drinkCard=drink?`<div class="gacha-drink"><div class="gacha-drink-photo">${drinkPack(drink)}</div><div><p class="eyebrow">今日配對飲料</p><h3>要來一${h(drink.unit||'份')}${h(fridgeDisplayName(drink.name))}嗎？</h3><p class="subtle">${h(findDrinkInformation(drink)?.container||drink.packaging||drink.unit)}</p><button type="button" class="text-link" data-action="view-drink" data-id="${h(drink.id)}">看看飲料資訊 ↗</button></div></div>`:`<div class="gacha-drink-status" role="status"><p>${state.loading?'正在替你找一份補給…':state.drinkState==='empty'?'今天的飲料推薦先留白，補給到貨後再來看看。':state.drinkState==='error'?'飲料推薦暫時沒有回應，今天的幸運籤已替你收好。':'飲料推薦準備中，先收下今天的好運。'}</p>${state.loading?'':'<a class="text-link" href="#overview">逛逛冰箱 ↗</a>'}</div>`;
+  const drinkCard=drink?`<div class="gacha-drink"><div class="gacha-drink-photo">${drinkPack(drink)}</div><div><p class="eyebrow">今日配對飲料</p><h3>${h(fridgeDisplayName(drink.name))}</h3><button type="button" class="text-link" data-action="view-drink" data-id="${h(drink.id)}">看看飲料資訊 ↗</button></div></div>`:`<div class="gacha-drink-status" role="status"><p>${state.loading?'正在替你找一份補給…':state.drinkState==='empty'?'今天的飲料推薦先留白，補給到貨後再來看看。':state.drinkState==='error'?'飲料推薦暫時沒有回應，今天的幸運籤已替你收好。':'飲料推薦準備中，先收下今天的好運。'}</p>${state.loading?'':'<a class="text-link" href="#overview">逛逛冰箱 ↗</a>'}</div>`;
   const snack = draw?.snack;
   const retry = !state.loading && (!drink || !snack)
     ? '<button type="button" class="text-link gacha-retry" data-action="gacha-retry">再看看今日補給 ↻</button>' : '';
