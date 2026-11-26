@@ -684,13 +684,11 @@ function legacyWishReviewLink() {
 function purchasedWishArt(wish) {
   const linked = wish.purchasedProduct;
   const kind = linked?.kind || wishKind(wish);
-  const url = linked ? '' : safeUrl(wish.url);
-  const directImage = url && /\.(?:avif|gif|jpe?g|png|webp)$/i.test(new URL(url).pathname);
   const drink = kind === 'drink' && drinkById(linked?.id || wish.sourceDrinkId);
-  const photo = kind === 'drink' && findProductPhoto(drink?.name || linked?.name || wish.name);
-  const source = directImage ? url : photo?.displaySrc || photo?.src;
+  const pack = drink || { name: linked?.name || wish.name };
+  const photo = kind === 'drink' && findProductPhoto(pack.name) ? drinkPack(pack, { thumbnail: true }) : '';
   const fallback = `<span class="purchased-wish-fallback" aria-hidden="true">${h(SUPPLY_KINDS[kind] || wishKindLabel(kind))}</span>`;
-  return `<span class="purchased-wish-art"${['snack', 'noodle'].includes(kind) && !source ? ' data-purchased-snack-art' : ''}>${fallback}${source ? `<img src="${h(source)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : ''}</span>`;
+  return `<div class="purchased-wish-art"${['snack', 'noodle'].includes(kind) ? ' data-purchased-snack-art' : ''}>${fallback}${photo}</div>`;
 }
 
 function hydratePurchasedWishArt(container, wish, outlineId) {
@@ -698,7 +696,7 @@ function hydratePurchasedWishArt(container, wish, outlineId) {
   if (!art) return;
   const img = art.querySelector('img');
   if (img) {
-    const removeBrokenImage = () => img.remove();
+    const removeBrokenImage = () => img.closest('.drink-pack-group')?.remove();
     img.addEventListener('error', removeBrokenImage, { once: true });
     if (img.complete && !img.naturalWidth) removeBrokenImage();
   }
@@ -711,41 +709,82 @@ function renderPurchasedWishes(wishes) {
   if (!wishes.length) return '';
   return `<section class="purchased-wishes" aria-labelledby="purchased-wishes-title">
     <div class="purchased-wishes-heading"><h2 id="purchased-wishes-title">願望成真</h2><span>已購買</span>
-      <div class="purchased-wishes-nav" hidden><button type="button" data-wish-slide="-1" aria-label="上一批已購買品項" aria-controls="purchased-wishes-list">‹</button><button type="button" data-wish-slide="1" aria-label="下一批已購買品項" aria-controls="purchased-wishes-list">›</button></div></div>
+      <div class="purchased-wishes-nav" hidden><button type="button" data-wish-slide="-1" aria-label="上一批已購買品項" aria-controls="purchased-wishes-list">‹</button><button type="button" data-wish-autoplay aria-label="暫停自動輪播" aria-controls="purchased-wishes-list">Ⅱ</button><button type="button" data-wish-slide="1" aria-label="下一批已購買品項" aria-controls="purchased-wishes-list">›</button></div></div>
     <ul class="purchased-wishes-list" id="purchased-wishes-list" tabindex="0" aria-label="已購買的願望">${wishes.map(wish => {
     const url = safeUrl(wish.url);
     const productLabel = wish.purchasedProduct ? supplyLabel(wish.purchasedProduct) : '';
     const content = `${purchasedWishArt(wish)}<span class="purchased-wish-caption"><b>${h(wish.name)}</b>${productLabel && productLabel !== wish.name ? `<small title="${h(productLabel)}">${h(productLabel)}</small>` : ''}</span>`;
-    return `<li data-purchased-wish-id="${h(wish.id)}">${url ? `<a href="${h(url)}" target="_blank" rel="noopener noreferrer">${content}</a>` : `<span class="purchased-wish-tile">${content}</span>`}</li>`;
+    return `<li data-purchased-wish-id="${h(wish.id)}">${url ? `<a href="${h(url)}" target="_blank" rel="noopener noreferrer">${content}</a>` : `<div class="purchased-wish-tile">${content}</div>`}</li>`;
   }).join('')}</ul></section>`;
 }
 
-function syncPurchasedWishCarousel() {
-  const list = $('#purchased-wishes-list');
-  if (!list) return;
-  const nav = list.parentElement.querySelector('.purchased-wishes-nav');
-  const [previous, next] = nav.querySelectorAll('button');
-  const limit = list.scrollWidth - list.clientWidth;
-  nav.hidden = limit < 2;
-  previous.disabled = list.scrollLeft < 2;
-  next.disabled = list.scrollLeft >= limit - 2;
-}
+let purchasedWishAutoplay;
+let disposePurchasedWishCarousel;
 
 function bindPurchasedWishes(wishes) {
   const list = $('#purchased-wishes-list');
   if (!list) return;
-  list.addEventListener('scroll', syncPurchasedWishCarousel, { passive: true });
-  list.parentElement.querySelector('.purchased-wishes-nav').addEventListener('click', event => {
-    const direction = Number(event.target.closest('[data-wish-slide]')?.dataset.wishSlide);
-    if (direction) list.scrollBy({ left: direction * list.clientWidth, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
-  });
+  const section = list.parentElement;
+  const nav = section.querySelector('.purchased-wishes-nav');
+  const [previous, toggle, next] = nav.querySelectorAll('button');
+  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  const controller = new AbortController();
+  const { signal } = controller;
+  let timer;
+  let hovered = false;
+  let dragging = false;
+  let visible = false;
+  const motion = () => reducedMotion.matches ? 'instant' : 'smooth';
+  const isPlaying = () => purchasedWishAutoplay ?? !reducedMotion.matches;
+
+  function syncMode() {
+    const playing = isPlaying();
+    toggle.textContent = playing ? 'Ⅱ' : '▶';
+    toggle.setAttribute('aria-label', playing ? '暫停自動輪播' : '開始自動輪播');
+    sync();
+  }
+
+  function sync() {
+    clearTimeout(timer);
+    const limit = list.scrollWidth - list.clientWidth;
+    nav.hidden = limit < 2;
+    previous.disabled = list.scrollLeft < 2;
+    next.disabled = list.scrollLeft >= limit - 2;
+    const focus = document.activeElement;
+    if (nav.hidden || !isPlaying() || document.hidden || !visible || hovered || dragging || (focus !== toggle && section.contains(focus))) return;
+    timer = setTimeout(() => {
+      if (!list.isConnected) return;
+      const step = list.children[1].offsetLeft - list.children[0].offsetLeft;
+      if (next.disabled) list.scrollTo({ left: 0, behavior: 'instant' });
+      else list.scrollBy({ left: step, behavior: motion() });
+      sync();
+    }, 4000);
+  }
+
+  previous.addEventListener('click', () => list.scrollBy({ left: -list.clientWidth, behavior: motion() }), { signal });
+  next.addEventListener('click', () => list.scrollBy({ left: list.clientWidth, behavior: motion() }), { signal });
+  toggle.addEventListener('click', () => { purchasedWishAutoplay = !isPlaying(); syncMode(); }, { signal });
+  list.addEventListener('scroll', sync, { passive: true, signal });
+  section.addEventListener('pointerenter', event => { if (event.pointerType === 'mouse') { hovered = true; sync(); } }, { signal });
+  section.addEventListener('pointerleave', event => { if (event.pointerType === 'mouse') { hovered = false; sync(); } }, { signal });
+  list.addEventListener('pointerdown', () => { dragging = true; sync(); }, { signal });
+  for (const event of ['pointerup', 'pointercancel']) window.addEventListener(event, () => { if (dragging) { dragging = false; sync(); } }, { signal });
+  section.addEventListener('focusin', sync, { signal });
+  section.addEventListener('focusout', () => queueMicrotask(sync), { signal });
+  document.addEventListener('visibilitychange', sync, { signal });
+  reducedMotion.addEventListener('change', syncMode, { signal });
+  const resize = new ResizeObserver(sync);
+  resize.observe(list);
+  const intersection = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; sync(); });
+  intersection.observe(section);
+  disposePurchasedWishCarousel = () => { clearTimeout(timer); controller.abort(); resize.disconnect(); intersection.disconnect(); };
   [...list.children].forEach((tile, index) => hydratePurchasedWishArt(tile, wishes[index], `purchased-outline-${index}`));
-  syncPurchasedWishCarousel();
+  syncMode();
 }
 
-window.addEventListener('resize', syncPurchasedWishCarousel);
-
 function renderWishes() {
+  disposePurchasedWishCarousel?.();
+  disposePurchasedWishCarousel = undefined;
   const managing = view === 'manage-wishes';
   const allWishes = [...store.data.wishes].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
   const purchased = allWishes.filter(wish => wish.status === 'purchased')
@@ -1027,6 +1066,10 @@ async function route() {
     if (next === 'archive') history.replaceState(null, '', '#overview-history');
   }
   view = nextView;
+  if (view !== 'wishes') {
+    disposePurchasedWishCarousel?.();
+    disposePurchasedWishCarousel = undefined;
+  }
   const sequence = ++routeSequence;
   if(store.mode==='google'&&view!=='admin')store.cancelOtherViewReads(adminViews.has(view));
   const needsGoogleRead = store.mode === 'google' && view !== 'admin' && view !== 'snack-drawer' && (!store.googleViewLoaded || store.inWarehouse !== adminViews.has(view));

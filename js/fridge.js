@@ -183,11 +183,11 @@ function fridgeIconFor(category) {
 }
 
 /** Packaging is visual: a drawing never represents a number of containers. */
-export function drinkPack(drink, { defer = false, fullSize = false } = {}) {
+export function drinkPack(drink, { defer = false, fullSize = false, thumbnail = false } = {}) {
   const photo = findProductPhoto(drink.name);
   const source = photo ? h(fullSize ? photo.src : photo.displaySrc || photo.src) : '';
   const sourceAttribute = `${defer ? 'data-product-src' : 'src'}="${source}"`;
-  const photoScale = drink.packaging === '小型鐵罐' ? 0.8 : 1;
+  const photoScale = (drink.packaging === '小型鐵罐' ? 0.8 : 1) * (thumbnail && photo ? 41 / Math.max(photo.height, 84) : 1);
   if (photo?.crop && photo.originalSize) {
     const [x, y, width, height] = photo.crop;
     const [originalWidth, originalHeight] = photo.originalSize;
