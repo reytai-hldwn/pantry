@@ -99,7 +99,7 @@ test('the almond drink uses the Costco 200 mL unsweetened carton label', () => {
 test('the Costco 250 mL soy milk label displays for the existing unclassified item', () => {
   const drink = { name: '義美低糖豆奶', packaging: '其他' };
   const artwork = drinkPack(drink);
-  assert.match(artwork, /imei-low-sugar-soy-milk-250\.webp/);
+  assert.match(artwork, /imei-low-sugar-soy-milk-250-right\.webp/);
   assert.match(artwork, /clip-path:polygon\(/);
   const info = findDrinkInformation(drink);
   assert.equal(info.container, '250 毫升');

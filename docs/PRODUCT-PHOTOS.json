@@ -645,22 +645,22 @@
       "sha256": "f8ac4c4af8ec9ad8f6f42faf50dda63dbc4f128a2d885880bdf69b8fd2139cd9"
     },
     {
-      "file": "imei-low-sugar-soy-milk-250.jpg",
-      "original": "義美 低糖豆奶 250 毫升",
+      "file": "imei-low-sugar-soy-milk-250-right.jpg",
+      "original": "義美 低糖豆奶 250 毫升（右側視角）",
       "originalSize": [
-        1200,
-        1200
+        640,
+        640
       ],
       "crop": [
-        248,
-        53,
-        696,
-        1091
+        145,
+        33,
+        360,
+        575
       ],
-      "checkedAt": "2026-11-24",
-      "source": "https://www.costco.com.tw/Food-Dining/Drinks/Beverages-Juice/I-Mei-Low-Sugar-Soybean-Milk-250-ml-X-24-Count/p/146158",
-      "imageUrl": "https://www.costco.com.tw/medias/sys_master/images/h12/h46/313982830182430.jpg",
-      "sha256": "6de8716b27159aad33f925a67fa145464539ee2032f875cd9d4f4c9b1d329539"
+      "checkedAt": "2026-11-27",
+      "source": "https://www.momoshop.com.tw/TP/TP0000960/goodsDetail/TP00009600000766",
+      "imageUrl": "https://i5.momoshop.com.tw/1767375827/goodsimg/TP000/0960/0000/766/TP00009600000766_R1_m.jpg",
+      "sha256": "ea34bc14f5f4f3e11310b04e5d67610660094a60561134858b75020d92b6fec3"
     },
     {
       "file": "asahi-sixteen-tea-530.jpg",
