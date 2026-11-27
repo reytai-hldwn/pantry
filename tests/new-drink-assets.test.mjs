@@ -98,6 +98,9 @@ test('the almond drink uses the Costco 200 mL unsweetened carton label', () => {
 
 test('the Costco 250 mL soy milk label displays for the existing unclassified item', () => {
   const drink = { name: '義美低糖豆奶', packaging: '其他' };
+  const artwork = drinkPack(drink);
+  assert.match(artwork, /imei-low-sugar-soy-milk-250\.webp/);
+  assert.match(artwork, /clip-path:polygon\(/);
   const info = findDrinkInformation(drink);
   assert.equal(info.container, '250 毫升');
   assert.equal(findDrinkInformation({ ...drink, name: '義美低糖豆漿', packaging: '鋁箔包' }), info);
@@ -107,6 +110,12 @@ test('the Costco 250 mL soy milk label displays for the existing unclassified it
   assert.match(html, /<th scope="row">鈉<\/th><td>2\.9 毫克<\/td><td>1\.2 毫克<\/td>/);
   assert.match(html, /<th scope="row">膽固醇<\/th><td>0 毫克<\/td><td>0 毫克<\/td>/);
   assert.match(html, /146158_desc_01-240510/);
+});
+
+test('both 330 mL tea cartons render at the same height in the fridge', () => {
+  for (const name of ['午后時光重乳奶茶', '貝思寶兒檸檬紅茶']) {
+    assert.match(drinkPack({ name, packaging: '鋁箔包' }), /drink-photo-viewport" style="width:[^;]+;height:132\.000px;/);
+  }
 });
 
 test('confirmed Taiwan Calpis carton has its own complete serving, calcium and allergen information', () => {
